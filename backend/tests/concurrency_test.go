@@ -24,11 +24,11 @@ func code(err error) string {
 	return ""
 }
 
-// 500 different users race for the same seat: exactly one wins.
+// 1,000 different users race for the same seat: exactly one wins.
 func TestSeatRace(t *testing.T) {
 	ev, seats := publishNumbered(t, 2, 10)
 	target := seats["A5"]
-	const n = 500
+	const n = 1000
 	users := make([]uuid.UUID, n)
 	for i := range users {
 		users[i] = newUser(t)
@@ -94,10 +94,10 @@ func TestOverlappingHoldsAreAllOrNothing(t *testing.T) {
 	}
 }
 
-// 300 users × 1 ticket against capacity 100: never oversold.
+// 1,000 users × 1 ticket against capacity 100: exactly 100 sold, never more.
 func TestGANoOversell(t *testing.T) {
 	ev, cat := publishGA(t, 100, 10)
-	const n = 300
+	const n = 1000
 	users := make([]uuid.UUID, n)
 	for i := range users {
 		users[i] = newUser(t)
@@ -167,9 +167,10 @@ func TestConfirmIsIdempotent(t *testing.T) {
 	key := uuid.NewString()
 
 	var wg sync.WaitGroup
-	results := make([]inventory.BookingDTO, 5)
-	errs := make([]error, 5)
-	for i := range 5 {
+	const tries = 50 // double clicks, retries and refreshes all at once
+	results := make([]inventory.BookingDTO, tries)
+	errs := make([]error, tries)
+	for i := range tries {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

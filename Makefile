@@ -18,8 +18,9 @@ api:           ## run the API locally (migrations apply on start)
 seed:          ## publish demo events (idempotent)
 	cd backend && go run ./cmd/seed
 
-test:
-	cd backend && go test ./... -count=1
+test:          ## Go unit, API and concurrency tests (needs `make up`) + frontend tests
+	cd backend && go test ./... -count=1 -race
+	cd frontend && npm test
 
 web:
 	cd frontend && npm run dev

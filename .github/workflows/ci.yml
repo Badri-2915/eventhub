@@ -18,6 +18,11 @@ jobs:
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U eventhub" --health-interval 2s --health-timeout 3s --health-retries 20
+      redis: # the API tests run the real router, including the Redis rate limiter
+        image: redis:7-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 2s --health-timeout 3s --health-retries 20
     defaults:
       run:
         working-directory: backend
@@ -43,4 +48,5 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm test
       - run: npm run build

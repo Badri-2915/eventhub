@@ -266,7 +266,7 @@ run automatically when the server starts.
 | Design | **Tailwind CSS 4** | A calm, clean look with consistent colours and spacing |
 | Data loading | **TanStack Query** | Caching, auto-refresh, and instant updates from the live stream |
 | Page routing | **React Router** | Separate pages for public, attendee, host and admin |
-| Testing | **Go tests (with the race detector) + k6** | Real database tests for every tricky case, plus load tests |
+| Testing | **Go tests (race detector) + Vitest + k6** | Unit, API and concurrency tests on a real database, frontend unit and component tests, plus load tests |
 | Automatic checks | **GitHub Actions** | Runs formatting, checks, tests and the frontend build on every push |
 | Packaging | **Docker** | A tiny production image, and Postgres + Redis on the laptop |
 | Hosting | **Vercel, Render, Neon, Upstash** | All free plans (details below) |
@@ -317,19 +317,29 @@ of buyers in the same second, you just move to paid plans. **No code changes are
 
 | Test | Result |
 |---|---|
-| 500 requests fight for the same seat (Go test) | Exactly **1** wins |
+| **1,000** people click the same seat at the same moment (Go test) | Exactly **1** wins, 999 are told "taken" |
+| **1,000** people grab two side-by-side seats in a 200-seat hall at once, many pairs overlapping (Go test) | **0** seats sold twice, **0** half bookings, **0** deadlocks |
+| **1,000** people try to buy 100 open-seating tickets at once (Go test) | Exactly **100** sold, never more |
+| **2,500** payment requests at once: 50 bookings, each "Pay" sent 50 times (Go test) | Exactly **50** payments, nobody charged twice |
 | Two phones scan the same QR code together (Go test) | Exactly **1** check-in, the other sees "Already checked in" |
 | Undo, scan again, then scan after the event ends (Go test) | Undo works, re-scan works, after the event it is refused |
 | 200 users fight for one seat (k6 load test, on my laptop) | 1 wins, 199 are told "taken", **0 errors** |
 | 300 users try to buy 100 tickets (k6, on my laptop) | Exactly **100 sold**, never more |
 | 200 users keep booking for 60 seconds (k6, on my laptop) | **~350 bookings per second**, about 1,050 requests per second, **0% errors** |
 | 50 people browsing the **live** free website (k6) | About 64 requests per second, **0% errors**, 95% answered within 117 ms |
-| End-to-end check of every flow (host, attendee, cancel, check-in, admin) | **33 out of 33** checks pass |
 
-There are **23 Go tests**, run with Go's race detector on every push to GitHub. They cover
-seat races, overlapping seats, overselling, hold expiry, double payment, someone else's
-booking, cancellations and refunds, check-in (only once, undo, door counter, closing after the event), live price edits, free tickets, discount
-maths and the seating layout. Full load test details are in [loadtest/RESULTS.md](loadtest/RESULTS.md).
+There are **70 automated tests**, and GitHub Actions runs all of them on every push:
+
+| Kind | How many | What they check |
+|---|---|---|
+| Go unit tests | 14 | Session tokens (tampered, expired, wrong key and `alg: none` tokens are refused), settings checks (a bad setting never prints a password), discount maths, map links, the seating layout |
+| Go API tests | 6 | The **real** API over HTTP with a real database and Redis: sign-in and roles, every error code, hold → pay → ticket, paying twice, someone else's ticket, releasing seats, door check-in, cancellations and refunds, the "20 holds a minute" limit |
+| Go concurrency and database tests | 19 | Seat races, overlapping seats, overselling, double payment, hold expiry, cancelling while people book, check-in only once, live price edits, free tickets |
+| Frontend tests (Vitest) | 31 | Prices and discounts (must match the server to the paisa), seat numbering, the ticket picker's limits, price labels |
+
+Every Go test runs with Go's **race detector**, against a real PostgreSQL (no mocks), because
+the bugs that matter here live in locking and SQL. Full load test details are in
+[loadtest/RESULTS.md](loadtest/RESULTS.md).
 
 ---
 
@@ -360,7 +370,7 @@ your laptop, never on the live site. Sign in as `admin@eventhub.dev` to see the 
 |---|---|
 | `make up` / `make down` | Start / stop Postgres and Redis |
 | `make db-reset` then `make seed` | Wipe the local database and reload the demo events |
-| `make test` | Run all Go tests |
+| `make test` | Run all Go tests (with the race detector) and the frontend tests |
 | `make loadtest` | Run the k6 load tests (start the API with `HOLD_RATE_PER_MIN=1000000 make api` first) |
 | `make sqlc` | Regenerate the database code after changing `backend/queries/*.sql` |
 
@@ -393,9 +403,10 @@ backend/     Go server
   cmd/api          the server
   cmd/seed         adds demo events
   internal/        auth, events, inventory, tickets, admin, realtime, ratelimit, worker, notify, mail, db, httpx
+  internal/server  builds every route (used by the server and by the API tests)
   migrations/      numbered SQL files for the database
   queries/         SQL used by sqlc
-  tests/           real-database and race tests
+  tests/           API, concurrency and real-database tests
 frontend/    React website
   src/pages/       public, host and admin pages
   src/components/  seat map, layout designer, cards and more
@@ -430,7 +441,7 @@ If you only read one section, read this one:
 
 - **What it is:** a full event ticketing platform with live seat maps, 5-minute seat holds, QR tickets, door check-in, a host dashboard and an admin page.
 - **The hard problem it solves:** many people clicking the same seat at the same moment, and still **never selling a seat twice**. The database decides in one step, and a safety rule inside the database backs it up.
-- **The proof:** 500 requests for one seat give exactly 1 winner, 300 buyers for 100 tickets give exactly 100 sold, and the laptop test sustained **~350 bookings per second with 0 errors**. The live free site served 50 people at once with 0 errors.
+- **The proof:** 70 automated tests run on every push. 1,000 requests for one seat give exactly 1 winner; 1,000 buyers fighting over overlapping seats give 0 double bookings and 0 deadlocks; 1,000 buyers for 100 tickets give exactly 100 sold; and the laptop test sustained **~350 bookings per second with 0 errors**. The live free site served 50 people at once with 0 errors.
 - **What is honest:** payments are a demo (no real money), and emails are written but switched off. Both are clearly planned next steps.
 - **What it costs:** **₹0 a month**, running live on Vercel, Render, Neon and Upstash.
 
