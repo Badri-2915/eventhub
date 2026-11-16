@@ -1,7 +1,7 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vitest/config'
 
-// Unit and component tests (jsdom). Browser end-to-end tests live in e2e/ and run with Playwright.
+// Unit and component tests, run in jsdom (a browser-like DOM inside Node; no real browser or server).
 export default defineConfig({
   plugins: [react()],
   test: {
