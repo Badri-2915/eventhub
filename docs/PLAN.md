@@ -365,9 +365,9 @@ eventhub/
 
 | Test | Setup | Pass condition |
 |---|---|---|
-| Seat race | 500 goroutines try to hold seat A5 | exactly **1** success, 499 × 409 |
+| Seat race | 1,000 goroutines try to hold seat A5 | exactly **1** success, 999 × 409 |
 | Multi-seat overlap | User X holds A1–A3, User Y holds A3–A5 simultaneously | exactly one succeeds, no partial holds |
-| GA oversell | capacity 100, 300 goroutines × qty 1 | `sold + held == 100`, never > 100 |
+| GA oversell | capacity 100, 1,000 goroutines × qty 1 | `sold + held == 100`, never > 100 |
 | Expiry | hold, fast-forward `expires_at`, another user holds | second user wins; first confirm → 410 |
 | Idempotency | confirm twice with same key | 1 payment row, same response |
 | Ownership | user B confirms user A's booking | 403 |

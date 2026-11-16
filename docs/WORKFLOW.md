@@ -117,6 +117,6 @@ Every seat or ticket is claimed by a single conditional `UPDATE … WHERE status
 'AVAILABLE'` (or `capacity - sold - held >= qty`) inside a transaction, so two buyers
 can never both win; a `CHECK (sold + held <= capacity)` constraint backs it up. Holds
 expire lazily (expired holds count as free in the same query) and a background sweeper
-using `SKIP LOCKED` tidies up. Proven by tests: a 500-way race for one seat yields
-exactly one hold; 300 buyers for 100 tickets sell exactly 100; 200 users booking for
+using `SKIP LOCKED` tidies up. Proven by tests: a 1,000-way race for one seat yields
+exactly one hold; 1,000 buyers (Go test) and 300 buyers (k6) for 100 tickets sell exactly 100; 200 users booking for
 60 s sustained ~350 bookings/s with zero errors.

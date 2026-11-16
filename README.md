@@ -1,449 +1,638 @@
-# EventHub
+<div align="center">
+
+# 🎟️ EventHub
+
+**A live event ticketing platform where the same seat can never be sold to two people.**
 
 [![CI](https://github.com/Badri-2915/eventhub/actions/workflows/ci.yml/badge.svg)](https://github.com/Badri-2915/eventhub/actions/workflows/ci.yml)
+![Go](https://img.shields.io/badge/Go-1.27-00ADD8?logo=go&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
+![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-70_automated-2E7D32)
+![Cost](https://img.shields.io/badge/hosting-%E2%82%B90%2Fmonth-555)
 
-**An event ticketing website where the same seat can never be sold to two people.**
+### [🚀 Live demo: eventhub-swart-xi.vercel.app](https://eventhub-swart-xi.vercel.app)
 
-**Live demo:** https://eventhub-swart-xi.vercel.app (sign in with your Google account)
+Sign in with Google · Pick a seat · Pay (demo) · Get a QR ticket · Scan it at the door
 
----
-
-## The idea in simple words
-
-You know how it works when you book a movie or a stand-up show online. You open the
-seat map, pick a seat, and pay. Now imagine 200 people opening the same show at
-8 pm sharp and clicking on the **same seat at the same second**. Who gets it?
-
-In a badly built system, two people can both "win", both pay, and both turn up at the
-venue with a ticket for seat C7. That is the problem I wanted to solve properly.
-
-**EventHub** is my answer. It is a full ticketing platform:
-
-- **Hosts** create events, design their own seating layout, set prices (or make entry free), and check people in at the door by scanning a QR code.
-- **Attendees** pick seats on a live seat map. Their seats are held for 5 minutes while they pay, and then they get a QR ticket.
-- **Behind the scenes**, the database decides who gets each seat. Exactly one person wins, every single time, even under heavy load. I proved this with tests and load tests (numbers below).
-
-It is built with **Go, PostgreSQL, Redis and React**, and it runs live on free hosting for **₹0 per month**.
+</div>
 
 ---
 
-## Contents
+## ✨ At a glance
 
-1. [Try it yourself in 2 minutes](#try-it-yourself-in-2-minutes)
-2. [What each person can do](#what-each-person-can-do)
-3. [Being honest: what is real and what is not](#being-honest-what-is-real-and-what-is-not)
-4. [The hard part: making sure no seat is sold twice](#the-hard-part-making-sure-no-seat-is-sold-twice)
-5. [QR tickets at the door: how it works](#qr-tickets-at-the-door-how-it-works)
-6. [How it is built](#how-it-is-built)
-7. [Tech stack](#tech-stack)
-8. [Free tools it runs on](#free-tools-it-runs-on)
-9. [How many people can it handle for free?](#how-many-people-can-it-handle-for-free)
-10. [Proof: tests and load tests](#proof-tests-and-load-tests)
-11. [Run it on your laptop](#run-it-on-your-laptop)
-12. [Settings](#settings)
-13. [Folder structure](#folder-structure)
-14. [What I would build next](#what-i-would-build-next)
-15. [The short version](#the-short-version)
+| | |
+|---|---|
+| 🎯 **The problem** | 1,000 people click the same seat at the same second. Exactly **one** must get it, and nobody may be charged twice. |
+| 🧠 **The idea** | Let **PostgreSQL** decide, in one atomic statement, with row locks taken in a fixed order and `CHECK` constraints as the last line of defence. |
+| ⚡ **Real-time** | Every open seat map updates within a second through **Server-Sent Events + Redis Pub/Sub**. |
+| 🧪 **The proof** | **70 automated tests** on every push. 1,000-way seat race → exactly 1 winner. 2,500 payment requests at once → each booking paid exactly once. 0 deadlocks. |
+| 📈 **Load** | **~350 bookings/s** with **0% errors** (k6, laptop). Live free site: 50 users at once, p95 117 ms. |
+| 💸 **Cost** | **₹0/month** on Vercel, Render, Neon and Upstash free plans. |
 
 ---
 
-## Try it yourself in 2 minutes
+## 📚 Contents
+
+1. [The story behind it](#-the-story-behind-it)
+2. [Try it in 2 minutes](#-try-it-in-2-minutes)
+3. [Features](#-features)
+4. [What is real and what is simulated](#-what-is-real-and-what-is-simulated)
+5. [Architecture](#-architecture)
+6. [A booking, end to end](#-a-booking-end-to-end)
+7. [How double booking is prevented](#-how-double-booking-is-prevented)
+8. [QR tickets and door check-in](#-qr-tickets-and-door-check-in)
+9. [Data model](#-data-model)
+10. [API reference](#-api-reference)
+11. [Tech stack](#-tech-stack)
+12. [Testing](#-testing)
+13. [Load testing](#-load-testing)
+14. [Run it locally](#-run-it-locally)
+15. [Configuration](#-configuration)
+16. [Deployment (₹0/month)](#-deployment-0month)
+17. [How far the free plan goes](#-how-far-the-free-plan-goes)
+18. [Project structure](#-project-structure)
+19. [Roadmap](#-roadmap)
+20. [TL;DR](#-tldr)
+
+---
+
+## 📖 The story behind it
+
+You know how booking a movie or a stand-up show works: open the seat map, pick a seat,
+pay. Now picture a popular show going on sale at **8 pm sharp**. Hundreds of people open
+the page and click **the same seat in the same second**.
+
+A naive system does *"check if the seat is free → then save the booking"*. Between the
+check and the save, someone else does the same check. Both see "free", both save, both
+pay, and two people walk up to the venue holding a ticket for seat **C7**.
+
+EventHub is built so that this **cannot** happen, not "rarely happens". The database is
+the single referee, every booking step is one atomic decision, and the claim is backed by
+tests that throw 1,000 concurrent buyers at a single seat.
+
+Around that core, it is a complete product: hosts design halls and sell tickets, buyers get
+QR tickets, and hosts scan them at the door.
+
+---
+
+## 🕹️ Try it in 2 minutes
 
 1. Open **https://eventhub-swart-xi.vercel.app** and sign in with Google.
-   - The very first visit can take a few seconds while the server wakes up.
-2. Open any event. Pick seats on the seat map, or choose how many tickets you want.
-   - If you open the same event in two browser windows, you can watch a seat turn grey in one window when you pick it in the other. That is the live update.
-3. Click **Continue**. Your seats are now held for **5 minutes**, and you see a countdown.
-4. Click **Pay**. This is a demo payment, so **no real money is taken**.
-5. You get a ticket with a **QR code**. Click **Download ticket** to save it as an image.
-6. Want to host? Click **Host an event → Become a host**. Create an event in 5 simple steps and publish it.
-7. At the door, the host scans the guest's QR code with a normal phone camera. The page shows **"Welcome in!"** the first time and **"Already checked in"** if someone tries the same ticket again. (Details in [QR tickets at the door](#qr-tickets-at-the-door-how-it-works).)
+   *The first visit may take a few seconds while the free server wakes up.*
+2. Open any event and pick seats on the seat map (or choose a number of tickets for open seating).
+   > 💡 Open the **same event in two browser windows**. Pick a seat in one and watch it turn grey in the other, live.
+3. Click **Continue**. Your seats are now **held for 5 minutes**, with a countdown.
+4. Click **Pay**. It's a demo payment, so **no real money moves**.
+5. Your ticket appears with a **QR code**. Click **Download ticket** to save it as an image.
+6. Want to host? **Host an event → Become a host**, then create and publish an event in 5 steps.
+7. At the door, the host scans the QR with a normal phone camera: **"Welcome in!"** the first time, **"Already checked in"** after that.
 
 ---
 
-## What each person can do
+## 🧩 Features
 
-Everyone signs in the same way (Google). Being a host is just one click, and admin access
-comes from a list of email addresses in the settings.
+Everyone signs in the same way (Google). Becoming a host is one click, and admins are a
+list of email addresses in the server settings.
 
-| Who | What they can do |
-|---|---|
-| **Anyone** | Browse and search events by city and type (film, comedy, music, theatre, workshop), and see live seat availability |
-| **Attendee** | Pick exact seats, or a number of tickets for open seating. Seats are held for 5 minutes during checkout. Pay (demo). Get a QR ticket on screen and download it as an image. Get directions to the venue. Cancel for a full refund before the host's cutoff time |
-| **Host** | Create an event in 5 steps: details, Google Maps link, seating type, tickets and review. A cover picture is added automatically based on the event type. Set a price per ticket, tick **Free entry**, or add an optional **discount %**. For seated events, design the hall on a grid (rows, aisles, blocked seats, price tiers). **Edit a live event any time**: details, prices, discounts and ticket counts. See sales live with a chart, see the attendee list, download it as CSV, check guests in with QR, delete drafts, and cancel an event (everyone is refunded automatically) |
-| **Admin** | See platform totals (users, hosts, events, bookings, revenue), see every event with its host, and cancel any event with refunds |
+<table>
+<tr><th width="18%">Who</th><th>What they can do</th></tr>
+<tr><td>🌍 <b>Anyone</b></td><td>Browse and search events by city and type (film, comedy, music, theatre, workshop) and see live availability.</td></tr>
+<tr><td>🎫 <b>Attendee</b></td><td>
+Pick exact seats on a live map, or a number of tickets for open seating ·
+5-minute seat hold with countdown · Pay (demo) and get a QR ticket ·
+download the ticket as an image · get directions to the venue ·
+cancel for a full refund before the host's cutoff time.
+</td></tr>
+<tr><td>🎤 <b>Host</b></td><td>
+Create an event in 5 steps (details → Google Maps link → seating → tickets → review) ·
+a cover picture is chosen automatically from the event type ·
+paid tickets, <b>free entry</b>, or a <b>discount %</b> ·
+design a seated hall on a grid (rows, aisles, blocked seats, price tiers) ·
+<b>edit a live event</b> (details, prices, discounts, ticket counts) ·
+live sales chart · attendee list with CSV export ·
+QR door check-in with undo and a live arrival counter ·
+delete drafts · cancel an event (everyone is refunded automatically).
+</td></tr>
+<tr><td>🛡️ <b>Admin</b></td><td>Platform totals (users, hosts, events, bookings, revenue), every event with its host, and cancel any event with refunds.</td></tr>
+</table>
 
-A full walkthrough of every flow is in [docs/WORKFLOW.md](docs/WORKFLOW.md).
+Every screen and flow is walked through in **[docs/WORKFLOW.md](docs/WORKFLOW.md)**.
 
 ---
 
-## Being honest: what is real and what is not
+## 🔍 What is real and what is simulated
 
-I prefer being clear about this upfront.
+I prefer to be upfront about this.
 
-| Part | Status | What that means |
+| Part | Status | Notes |
 |---|---|---|
-| Google sign-in | Real | Verified on the server |
-| Seat holds, booking, cancelling, refunds | Real | Correct even when many people book at the same time |
-| Live seat map | Real | Updates in every open browser within a second |
-| QR tickets and door check-in | Real | Each ticket can be checked in only once |
-| Host dashboard, CSV export, admin page | Real | |
-| **Payments** | **Simulated** | **No real money moves.** The checkout has a demo "Pay" button (and a "Simulate failed payment" button to test failures). Real payment gateways like Razorpay need a registered business and KYC. Everything around payment is still built the real way: seats are held before paying, a payment can never be charged twice, and refunds are recorded. Adding Razorpay later is a small, well-defined change ([plan here](docs/WORKFLOW.md#6-payments-simulated-on-purpose)) |
-| **Emails** | **Not sent** | **No emails go out right now.** Tickets live on the website and can be downloaded. The email code (ticket with QR, alert to the host, cancellation notice) is already written and tested. It is just switched off, and one setting turns it on |
-| Poster upload | Hidden | Events use nice cover pictures based on their type. Upload exists in the backend, but the button is hidden for now |
-| Door check-in | Real | Host-only, once per ticket, with undo, a live arrival counter, and closing after the event. No separate staff logins yet |
-| Monitoring | Basic | Uptime checks every 5 minutes plus server logs. No dashboards or error tracking yet |
+| Google sign-in | ✅ Real | The Google ID token is verified on the server |
+| Holds, booking, cancelling, refunds | ✅ Real | Correct under heavy concurrency (see [Testing](#-testing)) |
+| Live seat map | ✅ Real | Every open browser updates within about a second |
+| QR tickets and door check-in | ✅ Real | Each ticket checks in exactly once |
+| Host dashboard, CSV export, admin page | ✅ Real | |
+| **Payments** | 🟡 **Simulated** | **No real money moves.** Checkout has a demo **Pay** button and a **Simulate failed payment** button. A real gateway such as Razorpay needs a registered business and KYC. Everything *around* payment is built the real way: seats are held before paying, a payment can never be charged twice, and refunds are recorded. Adding Razorpay is a small, well-defined change ([plan](docs/WORKFLOW.md#6-payments-simulated-on-purpose)) |
+| **Emails** | 🟡 **Off** | The email code (ticket with QR, host alert, cancellation notice) is written and tested, but switched off. One setting turns it on |
+| Poster upload | ⚪ Hidden | Implemented in the backend; the button is hidden and events use type-based cover pictures |
+| Monitoring | ⚪ Basic | Uptime checks every 5 minutes plus server logs. No dashboards or error tracking yet |
 
 ---
 
-## The hard part: making sure no seat is sold twice
-
-This is the heart of the project. Here are the real problems and how each one is handled.
-
-**1. Two people click the same seat at the same moment.**
-The database does the deciding, not the app. Booking a seat is a single instruction to
-the database: *"mark this seat as held, but only if it is still free"*. Only one of the
-two requests can succeed. The other gets a clear "Sorry, that seat was just taken".
-If you pick 3 seats, you get all 3 or none, never just some of them.
-
-**2. Open seating (no seat numbers), like a comedy club with 100 tickets.**
-Same idea, using a counter: *"give 2 tickets only if sold + held + 2 is still within 100"*.
-On top of that, the database itself has a rule that sold + held can never go above
-capacity. So even a bug in my code could not oversell.
-
-**3. People pick seats and then walk away.**
-Seats are held for 5 minutes. After that they count as free again automatically.
-A small background job also tidies up and tells everyone's seat map that the seat is back.
-
-**4. Someone double-clicks "Pay", or the network retries the request.**
-Every payment carries a unique key. If the same payment comes in twice, the second time
-simply returns the first result. Nobody is charged twice.
-
-**5. Two buyers want overlapping seats and get stuck waiting on each other (a deadlock).**
-Seats are always locked in the same fixed order, so this cannot happen.
-
-**6. The host cancels the event while people are in the middle of paying.**
-The cancel waits for those in-progress steps, then refunds everyone and frees every seat
-in one go.
-
-**7. The host changes the price while people are booking.**
-Every booking remembers the price it was held at. New prices apply only to new bookings.
-The ticket count also cannot be reduced below what is already sold.
-
-**8. Fake tickets, or the same ticket scanned twice at the door.**
-Ticket codes are random. Check-in is again a single "only if not already checked in"
-instruction, so even two phones scanning together give exactly one "Welcome in!".
-The full door process is explained in the next section.
-
-**9. Bots spamming holds.** Each user can make only 20 holds per minute.
-
-**10. Keeping secrets safe.** The login session lives in a secure cookie that page scripts
-cannot read. Passwords never get printed in logs, and no secret is stored in the code.
-
----
-
-## QR tickets at the door: how it works
-
-**What is inside the QR code?**
-Just a web link: `https://<site>/check-in/EH-7KQ2M9XA`. The part at the end is the
-**ticket code**. It is 8 random letters and digits, made with a secure random generator,
-so there are about 2.8 lakh crore (2.8 trillion) possible codes. Nobody can guess a valid one.
-The QR holds no name, price or personal data. Everything is checked on the server.
-
-**The process, step by step:**
-
-1. **Booking.** When payment succeeds, the booking gets its ticket code, and the ticket page shows the QR. The guest can also download the ticket as an image, which works offline at the venue.
-2. **At the door, scan.** The host opens the normal phone camera (no special app) and points it at the guest's QR. The phone opens the check-in link.
-3. **The server checks the ticket, in this order:**
-   - Is the code in the right format, and does it exist?
-   - Does it belong to **this host's** event? If not, the answer is "Not a ticket for your events". A host cannot even find out whether another host's ticket exists.
-   - Is the booking still **confirmed**, or was it cancelled or refunded (including when the whole event was cancelled)?
-   - Is the event **already over**? If yes, check-in is closed.
-4. **Mark it used, exactly once.** The database runs one instruction: *"set checked-in time = now, only if it is still empty"*. The first scan wins.
-5. **Show the result** in big colours that are easy to read at a busy door:
-   - Green **"Welcome in!"** with the guest's name, number of tickets and seat numbers.
-   - Yellow **"Already checked in"** with the time of the first scan, so staff can check the person's name.
-   - Red **"Not a ticket for your events"**, **"Ticket cancelled"** or **"Event is over"**.
-6. **Count.** After every scan the page shows **"Guests arrived 42 / 120"**. The host dashboard has an "Entry" column with each guest's arrival time.
-
-**Real-world problems at the door, and how they are handled:**
-
-| Problem | What happens |
-|---|---|
-| Two staff phones scan the same ticket at the same second | The database lets only one of them set the check-in time. One phone shows "Welcome in!", the other shows "Already checked in". This is covered by a test that runs both at once |
-| Someone shares a screenshot of their QR with a friend | Whoever reaches the door first gets in. The second person sees "Already checked in at 7:02 pm" with the **original buyer's name**, so staff can ask for ID |
-| Fake or made-up code | It is not found: "Not a ticket for your events" |
-| A ticket from a different event or host | Treated exactly like a fake code. Hosts can never see each other's tickets |
-| The guest cancelled and got a refund, or the event was cancelled | The booking is no longer confirmed: "Ticket cancelled" |
-| Someone tries to use the ticket after the event | Check-in closes 6 hours after the end time (or 12 hours after the start if there is no end time): "Event is over" |
-| Staff scan a ticket by mistake (or days before the event) | Early scans show a clear warning, and every result has an **Undo check-in** button. The ticket can then be scanned again |
-| A guest scans their own QR, or the host's phone is signed out | The page explains that this is an EventHub ticket to show at the door. A signed-out host gets a "Sign in to check in" button that brings them straight back to the ticket |
-| Camera not working or QR damaged | Staff type the code (shown under the QR) into the box on the check-in page |
-| Weak internet at the guest's end | The downloaded ticket image works offline. Only the host's phone needs internet |
-
-**What it does not do yet (honest list):** there are no separate staff accounts (only the
-host's own login can check people in), and the door page needs internet. Staff logins and
-an offline mode are good next steps.
-
----
-
-## How it is built
+## 🏗️ Architecture
 
 ```mermaid
 flowchart LR
-    U["Browser<br/>(React app)"]
+    U["🧑 Browser<br/>React app"]
     subgraph Vercel["Vercel (free)"]
-      FE["Website files<br/>+ forwards /api/* calls"]
+      FE["Static site<br/>+ rewrites /api/*"]
     end
     subgraph Render["Render (free, Singapore)"]
-      API["Go API<br/>sign-in, events, bookings,<br/>tickets, admin, live updates"]
+      API["Go API (Gin)<br/>auth · events · inventory<br/>tickets · admin · SSE"]
+      SW["Hold sweeper<br/>every 15 s"]
     end
-    PG[("Neon PostgreSQL<br/>the single source of truth")]
-    RD[("Upstash Redis<br/>live messages + rate limit")]
-    G["Google sign-in"]
-    UR["UptimeRobot<br/>checks every 5 min"]
+    PG[("Neon PostgreSQL<br/>single source of truth")]
+    RD[("Upstash Redis<br/>Pub/Sub + rate limit")]
+    G["Google Identity"]
+    UR["UptimeRobot<br/>GET /api/ping"]
 
-    U -- "pages + API calls" --> FE
+    U -- "pages + /api calls" --> FE
     FE -- "/api/*" --> API
-    U -. "live seat updates" .-> API
+    U -. "SSE: live seat updates" .-> API
     U -- "sign in" --> G
     API --> PG
     API --> RD
+    SW --> PG
     UR --> API
 ```
 
-In simple words:
+**Design principles**
 
-- **The browser only talks to one website (Vercel).** Vercel quietly forwards every `/api/...` call to the Go server on Render. Because of this, the login cookie works safely without extra cross-site setup. The only direct connection is the live seat stream.
-- **PostgreSQL is the boss.** Every booking decision happens inside the database, in one step. Redis is only a messenger that says "seat C7 just changed, update your screen". If Redis goes down, bookings still work fine and the seat map simply refreshes every 20 seconds instead.
-- **The server keeps no memory of users between requests.** So if traffic grows, I can run more copies of it without changing any code.
+- **PostgreSQL is the referee.** Every decision that matters (who gets a seat, whether a payment already happened, whether a ticket was already scanned) is one atomic SQL statement inside a transaction. Redis never decides anything.
+- **Redis is only a messenger.** After a change, the API publishes "seats C7, C8 changed" on a per-event channel, and every API instance pushes it to its SSE clients. If Redis is down, bookings still work and the seat map falls back to polling every 20 seconds.
+- **The API is stateless.** Sessions are signed JWTs in an `HttpOnly` cookie, so more API instances can be added without code changes.
+- **One origin for the browser.** Vercel forwards `/api/*` to Render, so the session cookie is first-party. Only the SSE stream connects to Render directly.
+- **Lazy expiry + a sweeper.** An expired hold already counts as free inside the hold query itself. A background sweeper (`FOR UPDATE SKIP LOCKED`) cleans up and tells seat maps the seats are back. It also skips the database entirely when nobody is booking, so the free database can sleep.
 
-**What happens when you book:**
+---
+
+## 🔄 A booking, end to end
 
 ```mermaid
 sequenceDiagram
-    participant B as Your browser
+    autonumber
+    participant B as Browser
     participant A as Go API
-    participant P as PostgreSQL
     participant R as Redis
-    B->>A: Hold these seats
-    A->>R: Is this user making too many holds?
-    A->>P: Mark seats HELD only if still free
-    P-->>A: Done, held for 5 minutes
-    A->>R: Tell everyone these seats are taken
-    R-->>B: Other people's seat maps turn grey
-    B->>A: Pay (with a unique payment key)
-    A->>P: Record payment, seats become BOOKED, create ticket
-    A-->>B: Your ticket with QR code
+    participant P as PostgreSQL
+    B->>A: POST /api/holds {event, seats}
+    A->>R: INCR hold counter (20 holds/min per user)
+    A->>P: BEGIN · lock event FOR SHARE · lock seats in id order
+    A->>P: UPDATE seats SET HELD … WHERE still free · COMMIT
+    P-->>A: all seats held (or none)
+    A->>R: PUBLISH event:{id} "seats changed"
+    R-->>B: SSE → every open seat map turns those seats grey
+    A-->>B: 201 booking PENDING, expires in 5 min
+    B->>A: POST /api/bookings/{id}/confirm + Idempotency-Key
+    A->>P: lock booking · insert payment (key UNIQUE) · seats → BOOKED · ticket code
+    A-->>B: 200 CONFIRMED + ticket code
+    B->>A: GET /api/tickets/{code}/qr.png
 ```
 
-**Database tables:** `users`, `events`, `ticket_categories` (prices, discounts, and counters
-for open seating), `seats`, `bookings` (with ticket code and check-in time),
-`booking_items` and `payments`. Changes to the tables are kept as numbered SQL files that
-run automatically when the server starts.
+**Lifecycles**
 
-**Backend code** (`backend/internal/`) is split by job: `auth` (sign-in and roles),
-`events` (create, edit, publish, stats), `inventory` (holds, payment, cancel, expiry),
-`tickets` (QR and check-in), `admin`, `realtime` (live updates), `ratelimit`,
-`worker` (hold clean-up), `notify` and `mail` (emails, switched off), `db` and `httpx`.
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "Booking" as bk {
+        [*] --> PENDING: hold
+        PENDING --> CONFIRMED: pay
+        PENDING --> FAILED: payment failed
+        PENDING --> EXPIRED: 5 min passed / released / event cancelled
+        CONFIRMED --> CANCELLED: refund / event cancelled
+    }
+```
+
+A seat moves `AVAILABLE → HELD → BOOKED`, and goes back to `AVAILABLE` on expiry, failure
+or cancellation. `BLOCKED` seats (pillars, aisles) are never sellable.
 
 ---
 
-## Tech stack
+## 🔒 How double booking is prevented
 
-| Part | What I used | Why |
+This is the heart of the project.
+
+### 1. Numbered seats: one conditional update
+
+```sql
+-- Lock target rows in id order (prevents deadlocks between overlapping holds),
+-- then one check-and-set: only free or expired seats match.
+WITH target AS (
+    SELECT t.id FROM seats t
+    WHERE t.event_id = $event AND t.id = ANY($seat_ids)
+    ORDER BY t.id
+    FOR UPDATE
+)
+UPDATE seats s
+SET status = 'HELD', booking_id = $booking, hold_expires_at = $expires
+FROM target
+WHERE s.id = target.id
+  AND (s.status = 'AVAILABLE' OR (s.status = 'HELD' AND s.hold_expires_at < now()))
+RETURNING s.id;
+```
+
+If fewer rows come back than were asked for, the transaction rolls back. You get **all
+your seats or none**, never half a booking. The loser gets a clean `409 SEATS_TAKEN`.
+
+### 2. Open seating: a guarded counter, backed by a constraint
+
+```sql
+UPDATE ticket_categories SET held = held + $qty
+WHERE id = $category AND capacity - sold - held >= $qty;
+
+-- and in the schema, so even a bug cannot oversell:
+CHECK (capacity IS NULL OR sold + held <= capacity)
+```
+
+### 3. Every tricky case, handled
+
+| # | Situation | How it is handled |
 |---|---|---|
-| Backend language | **Go 1.27** | Handles many people at the same time easily, and builds into one small, fast program |
-| Web framework | **Gin** | Simple and light for routes and middleware (login checks, rate limits, logging) |
+| 1 | Two people click the same seat | One conditional `UPDATE`; the database lets exactly one win |
+| 2 | Overlapping multi-seat holds (A1–A3 vs A3–A5) | Rows locked in **id order**, so no deadlock; all-or-nothing |
+| 3 | Open seating rush | Guarded counter + `CHECK (sold + held <= capacity)` |
+| 4 | People hold seats and walk away | 5-minute holds; expired holds count as free immediately; a `SKIP LOCKED` sweeper tidies up |
+| 5 | Double-click on **Pay**, or a network retry | `Idempotency-Key` header, `UNIQUE` in the database, checked after locking the booking; a repeat returns the same result |
+| 6 | Host cancels while people are paying | Holds take `FOR SHARE` on the event, cancel takes `FOR UPDATE`: cancel waits, then refunds everyone in one transaction |
+| 7 | Host changes the price mid-sale | Each booking stores the price it was held at; capacity can't drop below sold + held |
+| 8 | One user opens many holds | Partial unique index: one `PENDING` booking per user per event |
+| 9 | Bots spamming holds | Redis rate limit: 20 holds per minute per user |
+| 10 | Same QR scanned twice at once | `SET checked_in_at = now() WHERE checked_in_at IS NULL`; exactly one "Welcome in!" |
+| 11 | Session theft / tampering | Signed JWT in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` in production); tampered, expired and `alg: none` tokens are rejected |
+
+---
+
+## 📱 QR tickets and door check-in
+
+**What's in the QR?** Only a link: `https://<site>/check-in/EH-7KQ2M9XA`. The code is 8
+random characters from a cryptographic generator, about **2.8 trillion** possibilities, so
+nobody can guess a valid one. No name, price or personal data is inside; everything is
+checked on the server.
+
+**What the server checks, in order:**
+
+1. Does the code exist?
+2. Does it belong to **this host's** event? A host can't even learn whether another host's ticket exists.
+3. Is the booking still **confirmed** (not cancelled or refunded)?
+4. Is the event **not over yet**? Check-in closes 6 hours after the end time, or 12 hours after the start if there is no end time.
+5. Mark it used **exactly once**, then show a big, clear result:
+   🟢 **Welcome in!** (name, tickets, seats) · 🟡 **Already checked in at 7:02 pm** · 🔴 **Not your event / Cancelled / Event is over**
+
+| Real-world problem at the door | What happens |
+|---|---|
+| Two staff phones scan the same ticket together | Only one sets the check-in time; the other sees "Already checked in" (covered by a test) |
+| Someone shares a screenshot of their QR | First person in wins; the second sees the **original buyer's name** so staff can check ID |
+| A fake code, or a ticket for another host's event | "Not a ticket for your events" |
+| Scanned by mistake | Every result has **Undo check-in** |
+| Camera fails or QR is damaged | Type the code shown under the QR |
+| Guest has no internet | The downloaded ticket image works offline; only the host's phone needs internet |
+
+After every scan the page shows **"Guests arrived 42 / 120"**, and the host dashboard has an
+arrival-time column.
+
+---
+
+## 🗄️ Data model
+
+```mermaid
+erDiagram
+    users ||--o{ events : hosts
+    users ||--o{ bookings : makes
+    events ||--o{ ticket_categories : has
+    events ||--o{ seats : has
+    events ||--o{ bookings : for
+    ticket_categories ||--o{ seats : prices
+    bookings ||--o{ booking_items : contains
+    bookings ||--o{ payments : paid_by
+    seats |o--o| booking_items : "seat (numbered)"
+
+    events {
+        uuid id PK
+        uuid host_id FK
+        enum seating_mode "NUMBERED | GA"
+        enum status "DRAFT | PUBLISHED | CANCELLED | COMPLETED"
+        jsonb layout
+    }
+    ticket_categories {
+        uuid id PK
+        int price_paise
+        int capacity
+        int sold
+        int held "CHECK sold + held <= capacity"
+    }
+    seats {
+        uuid id PK
+        enum status "AVAILABLE | HELD | BOOKED | BLOCKED"
+        uuid booking_id FK
+        timestamptz hold_expires_at
+    }
+    bookings {
+        uuid id PK
+        enum status "PENDING | CONFIRMED | CANCELLED | EXPIRED | FAILED"
+        text ticket_code UK
+        timestamptz checked_in_at
+    }
+    payments {
+        uuid id PK
+        text idempotency_key UK
+        enum status "SUCCESS | FAILED | REFUNDED"
+        int amount_paise
+    }
+```
+
+- Money is always **integer paise** (₹500 = `50000`), never floating point.
+- Schema changes are numbered SQL migrations (`backend/migrations/`) applied automatically on start-up with **golang-migrate**.
+- Queries are plain SQL in `backend/queries/`, turned into type-safe Go by **sqlc**.
+
+---
+
+## 🌐 API reference
+
+All routes live under `/api`. Errors always have the same shape:
+`{"error": {"code": "SEATS_TAKEN", "message": "Some of those seats were just taken…"}}`.
+
+<details>
+<summary><b>Show all 37 routes</b></summary>
+
+| Method | Path | Who | Purpose |
+|---|---|---|---|
+| `GET` `HEAD` | `/ping` | anyone | Liveness for uptime checks (touches no database) |
+| `GET` | `/healthz` | anyone | Checks PostgreSQL and Redis |
+| `POST` | `/auth/google` | anyone | Exchange a Google ID token for a session cookie |
+| `POST` | `/auth/logout` | anyone | Clear the session |
+| `POST` | `/auth/dev` | anyone, **local only** | Developer sign-in (not registered in production) |
+| `GET` | `/me` | signed in | Current user |
+| `POST` | `/me/become-host` | signed in | Turn on hosting |
+| `GET` | `/events` | anyone | Search published events |
+| `GET` | `/events/cities` | anyone | Cities with events |
+| `GET` | `/events/:id` | anyone | Event details and ticket types |
+| `GET` | `/events/:id/seats` | anyone | Seat map with live status |
+| `GET` | `/events/:id/stream` | anyone | **SSE** stream of seat changes |
+| `GET` | `/tickets/:code/qr.png` | anyone | QR image for a ticket |
+| `POST` | `/holds` | signed in | Hold seats or GA tickets (rate limited) |
+| `DELETE` | `/holds/:id` | signed in | Release a hold |
+| `GET` | `/bookings/:id` | owner | Booking details |
+| `POST` | `/bookings/:id/confirm` | owner | Pay; needs an `Idempotency-Key` header |
+| `POST` | `/bookings/:id/cancel` | owner | Cancel and refund (before the cutoff) |
+| `GET` | `/me/bookings` | signed in | My tickets |
+| `GET` `POST` | `/host/events` | host | List / create my events |
+| `GET` `PUT` `DELETE` | `/host/events/:id` | host | Read / edit (also live) / delete a draft |
+| `POST` | `/host/events/:id/publish` | host | Publish |
+| `POST` `PUT` | `/host/events/:id/poster` | host | Poster upload (signature / save) |
+| `GET` | `/host/events/:id/stats` | host | Live sales numbers |
+| `GET` | `/host/events/:id/attendees` | host | Attendee list |
+| `GET` | `/host/events/:id/attendees.csv` | host | Attendee CSV |
+| `POST` | `/host/events/:id/cancel` | host | Cancel the event and refund everyone |
+| `POST` `DELETE` | `/host/check-in/:code` | host | Check in / undo check-in |
+| `GET` | `/admin/overview` | admin | Platform totals |
+| `GET` | `/admin/events` | admin | Every event with its host |
+| `POST` | `/admin/events/:id/cancel` | admin | Cancel any event with refunds |
+
+**Common error codes:** `SEATS_TAKEN` (409), `NOT_ENOUGH_TICKETS` (409), `HOLD_EXPIRED` (410),
+`HOLD_IN_PROGRESS` (409), `IDEMPOTENCY_KEY_REQUIRED` (400), `IDEMPOTENCY_KEY_REUSED` (409),
+`CANCEL_WINDOW_CLOSED` (409), `TICKET_NOT_FOUND` (404), `TICKET_NOT_VALID` (410),
+`CHECK_IN_CLOSED` (409), `TRY_AGAIN` (409), `RATE_LIMITED` (429), plus 401/403 for sign-in and roles.
+
+</details>
+
+---
+
+## 🛠️ Tech stack
+
+| Layer | Choice | Why |
+|---|---|---|
+| Language | **Go 1.27** | Cheap goroutines for many concurrent requests; one small static binary |
+| HTTP | **Gin** | Light routing and middleware (auth, roles, rate limit, logging, recovery) |
 | Database | **PostgreSQL 16** | Transactions, row locks and constraints give the correctness guarantees |
-| Database code | **pgx + sqlc** | I write plain SQL and sqlc turns it into type-safe Go code. No heavy ORM |
-| Database changes | **golang-migrate** | Numbered SQL files, applied automatically on start-up |
-| Live messages and rate limit | **Redis 7** | Sends "seat changed" to every open page, and counts holds per user |
-| Live updates to the browser | **Server-Sent Events (SSE)** | A simple one-way stream from server to browser, which is all a seat map needs |
-| Login | **Google sign-in + JWT** | Google confirms who you are, and our signed token sits in a secure cookie |
-| QR codes | **go-qrcode** | Ticket QR images are made on the server |
-| Frontend | **React 19 + TypeScript + Vite** | Typed, fast to build, fast to load |
-| Design | **Tailwind CSS 4** | A calm, clean look with consistent colours and spacing |
-| Data loading | **TanStack Query** | Caching, auto-refresh, and instant updates from the live stream |
-| Page routing | **React Router** | Separate pages for public, attendee, host and admin |
-| Testing | **Go tests (race detector) + Vitest + k6** | Unit, API and concurrency tests on a real database, frontend unit and component tests, plus load tests |
-| Automatic checks | **GitHub Actions** | Runs formatting, checks, tests and the frontend build on every push |
-| Packaging | **Docker** | A tiny production image, and Postgres + Redis on the laptop |
-| Hosting | **Vercel, Render, Neon, Upstash** | All free plans (details below) |
-| Monitoring | **UptimeRobot + Render logs** | Uptime check every 5 minutes, with an email if the site goes down |
+| DB access | **pgx + sqlc** | Plain SQL compiled into type-safe Go; no ORM magic around locking |
+| Migrations | **golang-migrate** | Numbered up/down SQL files, applied on start-up |
+| Messaging & limits | **Redis 7** | Pub/Sub for seat changes; per-user hold rate limit |
+| Real-time | **Server-Sent Events** | One-way server → browser stream; all a seat map needs |
+| Auth | **Google Identity + JWT** | Google proves who you are; a signed token sits in an `HttpOnly` cookie |
+| QR | **go-qrcode** | Ticket QR images generated on the server |
+| Frontend | **React 19 + TypeScript + Vite** | Typed, fast to build and to load |
+| Styling | **Tailwind CSS 4** | Consistent colours and spacing |
+| Data fetching | **TanStack Query** | Caching, refetching, and cache updates from the SSE stream |
+| Routing | **React Router** | Public, attendee, host and admin areas |
+| Tests | **Go test (`-race`) · Vitest · Testing Library · k6** | Unit, API, concurrency, component and load tests |
+| CI | **GitHub Actions** | `gofmt`, `go vet`, all tests and the frontend build on every push |
+| Packaging | **Docker** | Small production image; Postgres + Redis locally |
 
 ---
 
-## Free tools it runs on
+## 🧪 Testing
 
-The whole thing costs **₹0 per month**. The limits below are approximate, so check each website for the latest numbers.
+There are **70 automated tests**, and GitHub Actions runs every one of them on every push
+and pull request.
 
-| Job | Tool (free plan) | Main limits |
-|---|---|---|
-| Website | **Vercel** (Hobby) | About 100 GB of traffic a month, for non-commercial use |
-| Go server | **Render** (Free) | 512 MB memory and a small share of one CPU. It sleeps after 15 minutes without visitors, which is why UptimeRobot pings it |
-| Database | **Neon** (Free) | 0.5 GB of storage. The database sleeps when nobody is using it, with roughly 100 compute-hours a month |
-| Redis | **Upstash** (Free) | About 500,000 commands a month |
-| Sign-in | **Google** | Free, with no user limit once the app is published |
-| Uptime | **UptimeRobot** (Free) | Checks every 5 minutes and emails if the site is down |
-| Code and automatic checks | **GitHub + GitHub Actions** | Free for public projects |
+| Kind | Count | How it runs | What it proves |
+|---|---|---|---|
+| **Go unit** | 14 | Calls functions directly | Session tokens (tampered, expired, wrong-key and `alg: none` are refused), config validation never leaks a secret, discount maths, map links, seat-layout generation |
+| **Go API** | 6 | Starts the **real router** (`server.New`, the same function `main.go` uses) on `httptest.NewServer` and sends **real HTTP requests**; each client has its own cookie jar, so one test can be a buyer, a rival, a host and an admin at once | Sign-in and roles, every error code, hold → pay → ticket, paying twice, other people's bookings, releasing seats, check-in, cancellations and refunds, the 20-holds-per-minute limit |
+| **Go concurrency & database** | 19 | Up to **1,000 goroutines** wait on a start channel, then hit the booking service at the same instant against a **real PostgreSQL** (40 pooled connections) | Seat races, overlapping seats, oversell, double payment, hold expiry and takeover, cancel during checkout, one-time check-in, live price edits, free tickets |
+| **Frontend** | 31 | **Vitest + Testing Library** in jsdom (a browser-like DOM in Node); clicks are real user events | Prices and discounts match the server to the paisa, seat numbering, the ticket picker's limits, price labels |
 
-A small detail I am happy with: UptimeRobot calls a special `/api/ping` address that
-**does not touch the database**, and the clean-up job skips the database when nobody is
-booking. So the server stays awake for fast pages, but the free database can still sleep
-and save its monthly hours.
+**Headline results**
 
----
-
-## How many people can it handle for free?
-
-These are honest **estimates**. They are based on what I measured plus the free-plan limits.
-
-| Question | Rough answer |
+| Scenario | Result |
 |---|---|
-| How many people can sign up? | **1,00,000+** users. Each user takes very little space, so this is not the limit |
-| How many bookings can be stored? | Around **2,00,000 bookings and 1,000 events** before the 0.5 GB database fills up |
-| How many bookings per month? | Around **25,000 to 30,000** (about 1,000 a day). Redis messages run out first |
-| How many people browsing at the same time? | **Measured: 50 people at once with zero errors**, with most pages answered in about a tenth of a second (95% within 117 ms), and the server was not even at full load. Realistically around 100 to 200 active people at once |
-| How fast can it sell during a rush? | On my laptop the same code handled **~350 bookings per second**. On the free server, expect tens per second. That is plenty for a college fest or a 500-seat hall selling out in minutes |
+| **1,000** buyers click the same seat at the same moment | Exactly **1** hold, 999 × `SEATS_TAKEN` |
+| **1,000** buyers grab overlapping seat pairs in a 200-seat hall | **0** double bookings, **0** half bookings, **0** deadlocks, **0** `TRY_AGAIN` |
+| **1,000** buyers for **100** open-seating tickets | Exactly **100** sold |
+| **2,500** payment requests at once (50 bookings × 50 duplicates) | Exactly **50** payments, nobody charged twice |
+| Two phones scan the same QR together | Exactly **1** check-in |
 
-**In short:** the free setup is perfect for a demo, a portfolio, or small real events like
-a college fest, a comedy club or a 300 to 500 seat venue. For a huge launch with thousands
-of buyers in the same second, you just move to paid plans. **No code changes are needed.**
+Every Go test runs with Go's **race detector**, against a real PostgreSQL and Redis (no
+mocks), because the bugs that matter here live in locking and SQL. Locally the tests use a
+separate `eventhub_test` database, created and migrated automatically.
 
 ---
 
-## Proof: tests and load tests
+## 📈 Load testing
 
-| Test | Result |
-|---|---|
-| **1,000** people click the same seat at the same moment (Go test) | Exactly **1** wins, 999 are told "taken" |
-| **1,000** people grab two side-by-side seats in a 200-seat hall at once, many pairs overlapping (Go test) | **0** seats sold twice, **0** half bookings, **0** deadlocks |
-| **1,000** people try to buy 100 open-seating tickets at once (Go test) | Exactly **100** sold, never more |
-| **2,500** payment requests at once: 50 bookings, each "Pay" sent 50 times (Go test) | Exactly **50** payments, nobody charged twice |
-| Two phones scan the same QR code together (Go test) | Exactly **1** check-in, the other sees "Already checked in" |
-| Undo, scan again, then scan after the event ends (Go test) | Undo works, re-scan works, after the event it is refused |
-| 200 users fight for one seat (k6 load test, on my laptop) | 1 wins, 199 are told "taken", **0 errors** |
-| 300 users try to buy 100 tickets (k6, on my laptop) | Exactly **100 sold**, never more |
-| 200 users keep booking for 60 seconds (k6, on my laptop) | **~350 bookings per second**, about 1,050 requests per second, **0% errors** |
-| 50 people browsing the **live** free website (k6) | About 64 requests per second, **0% errors**, 95% answered within 117 ms |
+[k6](https://k6.io) scripts in [`loadtest/`](loadtest/) send real HTTP traffic to a running
+API.
 
-There are **70 automated tests**, and GitHub Actions runs all of them on every push:
-
-| Kind | How many | What they check |
+| Test | Where | Result |
 |---|---|---|
-| Go unit tests | 14 | Session tokens (tampered, expired, wrong key and `alg: none` tokens are refused), settings checks (a bad setting never prints a password), discount maths, map links, the seating layout |
-| Go API tests | 6 | The **real** API over HTTP with a real database and Redis: sign-in and roles, every error code, hold → pay → ticket, paying twice, someone else's ticket, releasing seats, door check-in, cancellations and refunds, the "20 holds a minute" limit |
-| Go concurrency and database tests | 19 | Seat races, overlapping seats, overselling, double payment, hold expiry, cancelling while people book, check-in only once, live price edits, free tickets |
-| Frontend tests (Vitest) | 31 | Prices and discounts (must match the server to the paisa), seat numbering, the ticket picker's limits, price labels |
+| 200 users race for one seat | Laptop | 1 winner, 199 × 409, p95 140 ms, **0 errors** |
+| 300 buyers for 100 GA tickets | Laptop | Exactly **100 sold**, p95 301 ms |
+| 200 users booking for 60 s | Laptop | **~350 bookings/s**, ~1,050 req/s, hold p95 193 ms, confirm p95 311 ms, **0% errors** |
+| 50 users browsing the **live** site | Free hosting | ~64 req/s, **0% errors**, p95 117 ms |
 
-Every Go test runs with Go's **race detector**, against a real PostgreSQL (no mocks), because
-the bugs that matter here live in locking and SQL. Full load test details are in
-[loadtest/RESULTS.md](loadtest/RESULTS.md).
+Full numbers and method: **[loadtest/RESULTS.md](loadtest/RESULTS.md)**.
 
 ---
 
-## Run it on your laptop
+## 💻 Run it locally
 
-**One-time setup (macOS):**
+**Prerequisites (macOS):**
 
 ```bash
 brew install go node sqlc colima docker docker-compose k6
 colima start --cpu 2 --memory 4
-cp backend/.env.example backend/.env       # then set JWT_SECRET: openssl rand -base64 48
+```
+
+**One-time setup:**
+
+```bash
+git clone https://github.com/Badri-2915/eventhub.git && cd eventhub
+cp backend/.env.example backend/.env      # then set JWT_SECRET: openssl rand -base64 48
 cd frontend && npm install && cd ..
 ```
 
-**Every time**, open three terminals inside the `eventhub/` folder (after restarting your
-Mac, run `colima start` first):
+**Every time** (three terminals in `eventhub/`; after a reboot, run `colima start` first):
 
 ```bash
-make up && make seed     # starts Postgres + Redis and adds 5 demo events
-make api                 # Go server on port 8080
+make up && make seed     # Postgres + Redis in Docker, plus 5 demo events
+make api                 # Go API on :8080 (migrations run on start)
 make web                 # website on http://localhost:5173
 ```
 
-Open http://localhost:5173 and use **Developer sign-in** with any email. It only exists on
-your laptop, never on the live site. Sign in as `admin@eventhub.dev` to see the Admin page.
+Open http://localhost:5173 and use **Developer sign-in** with any email. It exists only
+locally, never in production. Sign in as `admin@eventhub.dev` to see the admin page.
 
 | Command | What it does |
 |---|---|
 | `make up` / `make down` | Start / stop Postgres and Redis |
-| `make db-reset` then `make seed` | Wipe the local database and reload the demo events |
-| `make test` | Run all Go tests (with the race detector) and the frontend tests |
-| `make loadtest` | Run the k6 load tests (start the API with `HOLD_RATE_PER_MIN=1000000 make api` first) |
-| `make sqlc` | Regenerate the database code after changing `backend/queries/*.sql` |
+| `make db-reset && make seed` | Wipe the local database and reload demo events |
+| `make test` | All Go tests with `-race`, then all frontend tests |
+| `make loadtest` | k6 race, oversell and 60 s load tests (start the API with `HOLD_RATE_PER_MIN=1000000 make api`) |
+| `make sqlc` | Regenerate Go code after editing `backend/queries/*.sql` |
 
 ---
 
-## Settings
+## ⚙️ Configuration
 
-| Setting | On your laptop | On the live site | Where it comes from |
+| Variable | Local | Production | Notes |
 |---|---|---|---|
-| `DATABASE_URL` | already set (Docker) | needed (Render) | Neon, using the direct connection string |
-| `REDIS_URL` | already set (Docker) | needed (Render) | Upstash (`rediss://…`) |
-| `JWT_SECRET` | in `.env` | Render creates it | — |
-| `GOOGLE_CLIENT_ID` | optional | needed (Render) | Google Cloud, OAuth client ID |
-| `FRONTEND_ORIGIN` | already set | needed (Render) | The Vercel website address, with no `/` at the end. Used for QR links and live updates |
-| `ADMIN_EMAILS` | `admin@eventhub.dev` | needed (Render) | Your own Gmail |
-| `VITE_GOOGLE_CLIENT_ID` | optional | needed (Vercel) | The same Google client ID |
-| `VITE_STREAM_BASE` | not needed | needed (Vercel) | `https://<render-app>.onrender.com/api` |
-| `BREVO_API_KEY`, `MAIL_FROM` | not needed | not set (emails are off) | Brevo, for later |
+| `DATABASE_URL` | preset (Docker) | Render | Neon **direct** connection string |
+| `REDIS_URL` | preset (Docker) | Render | Upstash `rediss://…` |
+| `JWT_SECRET` | `.env` | Render (generated) | At least 32 bytes |
+| `GOOGLE_CLIENT_ID` | optional | Render | Google Cloud OAuth client ID |
+| `FRONTEND_ORIGIN` | preset | Render | Site URL without a trailing `/`; used for QR links and SSE CORS |
+| `ADMIN_EMAILS` | `admin@eventhub.dev` | Render | Comma-separated |
+| `HOLD_MINUTES` | `5` | `5` | Hold length |
+| `HOLD_RATE_PER_MIN` | `20` | `20` | Holds per user per minute |
+| `VITE_GOOGLE_CLIENT_ID` | optional | Vercel | Same Google client ID |
+| `VITE_STREAM_BASE` | not needed | Vercel | `https://<render-app>.onrender.com/api` |
+| `BREVO_API_KEY`, `MAIL_FROM` | not needed | unset (emails off) | For turning emails on later |
 
-Secrets live only in the Render and Vercel dashboards, and in local files that git ignores.
-**Nothing secret is in this repository.** The step-by-step free deployment guide is in
-[docs/DEPLOY.md](docs/DEPLOY.md).
-
----
-
-## Folder structure
-
-```
-backend/     Go server
-  cmd/api          the server
-  cmd/seed         adds demo events
-  internal/        auth, events, inventory, tickets, admin, realtime, ratelimit, worker, notify, mail, db, httpx
-  internal/server  builds every route (used by the server and by the API tests)
-  migrations/      numbered SQL files for the database
-  queries/         SQL used by sqlc
-  tests/           API, concurrency and real-database tests
-frontend/    React website
-  src/pages/       public, host and admin pages
-  src/components/  seat map, layout designer, cards and more
-  public/covers/   cover pictures for each event type
-loadtest/    k6 load tests and results
-docs/        WORKFLOW.md (how everything works), DEPLOY.md (free hosting guide), PLAN.md (original design)
-render.yaml  Render setup     .github/workflows/ci.yml  automatic checks
-```
+Secrets live only in the Render and Vercel dashboards and in git-ignored local files.
+**Nothing secret is committed to this repository.**
 
 ---
 
-## What I would build next
+## ☁️ Deployment (₹0/month)
 
-| Next step | Why | Tool (free option) |
+| Job | Service (free plan) | Main limits |
 |---|---|---|
-| Real payments | Replace the demo payment with real money | Razorpay (test mode first) |
-| Emails | Send the ticket with QR to the buyer, alert the host, notify cancellations. Already written, just switched on with a key | Brevo (300 emails a day free) |
-| Door staff logins | Let the host add helpers who can scan tickets without the host's own account | Code change |
-| Offline door mode | Keep checking in for a short time if the venue's internet drops, then sync | Code change |
-| Error tracking | Get an alert with full details whenever something crashes | Sentry |
-| Dashboards | Graphs of traffic, speed, holds and bookings per minute | Prometheus + Grafana Cloud |
-| Browser tests | Automatically click through booking and check-in on every push | Playwright |
-| Poster upload | Let hosts upload their own event picture | Cloudinary |
-| Very big ticket rushes | Split the ticket counter into parts, and add a waiting room for huge launches | Code change |
-| More scale | Paid server (no sleeping, more CPU), always-on database, more server copies | Paid plans, no code changes |
+| Website | **Vercel** Hobby | ~100 GB traffic/month, non-commercial |
+| Go API | **Render** Free (`render.yaml`) | 512 MB RAM, shared CPU, sleeps after 15 min idle |
+| Database | **Neon** Free | 0.5 GB storage, scales to zero, ~100 compute-hours/month |
+| Redis | **Upstash** Free | ~500K commands/month |
+| Sign-in | **Google Identity** | Free |
+| Uptime | **UptimeRobot** Free | Pings every 5 minutes, emails on downtime |
+| CI | **GitHub Actions** | Free for public repos |
+
+A small detail I like: UptimeRobot pings `/api/ping`, which **touches neither PostgreSQL
+nor Redis**, and the sweeper skips the database when nobody is booking. The API stays
+awake for fast pages, while the free database can still sleep and save its monthly hours.
+
+Step-by-step guide: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
 ---
 
-## The short version
+## 📊 How far the free plan goes
 
-If you only read one section, read this one:
+Honest estimates, based on measurements plus the free-plan limits:
 
-- **What it is:** a full event ticketing platform with live seat maps, 5-minute seat holds, QR tickets, door check-in, a host dashboard and an admin page.
-- **The hard problem it solves:** many people clicking the same seat at the same moment, and still **never selling a seat twice**. The database decides in one step, and a safety rule inside the database backs it up.
-- **The proof:** 70 automated tests run on every push. 1,000 requests for one seat give exactly 1 winner; 1,000 buyers fighting over overlapping seats give 0 double bookings and 0 deadlocks; 1,000 buyers for 100 tickets give exactly 100 sold; and the laptop test sustained **~350 bookings per second with 0 errors**. The live free site served 50 people at once with 0 errors.
-- **What is honest:** payments are a demo (no real money), and emails are written but switched off. Both are clearly planned next steps.
-- **What it costs:** **₹0 a month**, running live on Vercel, Render, Neon and Upstash.
+| Question | Rough answer |
+|---|---|
+| Registered users | **1,00,000+**; storage per user is tiny |
+| Stored bookings | ~**2,00,000 bookings and 1,000 events** before 0.5 GB fills up |
+| Bookings per month | ~**25,000–30,000**; the Redis command quota runs out first |
+| People browsing at once | **Measured: 50 with 0 errors** (p95 117 ms); realistically 100–200 |
+| Booking rush | ~350/s on a laptop; **tens per second** on the free server |
 
-Thanks for reading. If you try the live demo, open the same event in two windows and
-watch the seats change in real time.
+That's plenty for a college fest, a comedy club or a 300–500 seat hall. For a national-scale
+launch, move to paid plans, add more API instances, shard hot GA counters and add a
+waiting room. **No changes to the core code are needed.**
+
+---
+
+## 📁 Project structure
+
+```
+eventhub/
+├── backend/                  Go API
+│   ├── cmd/api/              entry point (server + hold sweeper)
+│   ├── cmd/seed/             demo events
+│   ├── internal/
+│   │   ├── server/           builds every route (shared by main.go and the API tests)
+│   │   ├── auth/             Google sign-in, JWT cookie, roles
+│   │   ├── events/           create, edit, publish, stats, attendees
+│   │   ├── inventory/        holds, payment, cancel, refunds, expiry
+│   │   ├── tickets/          QR codes and door check-in
+│   │   ├── realtime/         Redis Pub/Sub → SSE hub
+│   │   ├── ratelimit/        per-user Redis limiter
+│   │   ├── worker/           hold sweeper (SKIP LOCKED)
+│   │   ├── admin/  notify/  mail/  config/  db/  httpx/
+│   ├── migrations/           numbered SQL migrations
+│   ├── queries/              SQL for sqlc
+│   └── tests/                API, concurrency and stress tests
+├── frontend/                 React + TypeScript (Vite)
+│   ├── src/pages/            public, attendee, host and admin pages
+│   ├── src/components/       seat map, layout designer, ticket picker…
+│   ├── src/lib/              API client, money and layout helpers (+ tests)
+│   └── public/covers/        cover pictures per event type
+├── loadtest/                 k6 scripts and RESULTS.md
+├── docs/                     WORKFLOW.md · DEPLOY.md · PLAN.md
+├── .github/workflows/ci.yml  CI
+├── docker-compose.yml        local Postgres + Redis
+├── render.yaml               Render blueprint
+└── Makefile
+```
+
+---
+
+## 🗺️ Roadmap
+
+| Next step | Why | Tool |
+|---|---|---|
+| Real payments | Replace the demo with real money (webhook-confirmed) | Razorpay (test mode first) |
+| Emails | Ticket with QR, host alerts, cancellations (already written) | Brevo |
+| Door staff accounts | Helpers can scan without the host's login | Code change |
+| Offline door mode | Keep checking in when venue internet drops, sync later | Code change |
+| Error tracking | Alerts with stack traces | Sentry |
+| Metrics dashboards | Traffic, latency, holds and bookings per minute | Prometheus + Grafana |
+| Browser end-to-end tests | Click through booking and check-in on every push | Playwright |
+| Huge on-sales | Sharded GA counters and a waiting room | Code change + Redis |
+
+---
+
+## 🧾 TL;DR
+
+- **What:** a full ticketing platform with live seat maps, 5-minute holds, QR tickets, door check-in, host dashboards and an admin page.
+- **Hard part:** many people clicking the same seat at once, and still **never selling it twice**. PostgreSQL decides in one atomic statement, with ordered locks and `CHECK` constraints behind it.
+- **Proof:** **70 automated tests** in CI. 1,000-way seat race → exactly 1 winner; 1,000 buyers for 100 tickets → exactly 100 sold; 2,500 concurrent payments → no double charge; 0 deadlocks. k6: **~350 bookings/s, 0% errors**.
+- **Honest:** payments are simulated and emails are switched off, both by design for now.
+- **Cost:** **₹0/month**, live at **[eventhub-swart-xi.vercel.app](https://eventhub-swart-xi.vercel.app)**.
+
+<div align="center">
+
+**Tip:** open the same event in two windows and watch the seats change in real time. ✨
+
+</div>

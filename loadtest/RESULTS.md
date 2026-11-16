@@ -15,7 +15,7 @@ Notes
   counter into N buckets is the next step if one event ever needs more.
 - `http_req_duration max` in the raw output includes teardown, which cancels the
   test event and refunds ~21k bookings in a single transaction.
-- Correctness is also covered by Go tests (`make test`), including a 500-way seat race.
+- Correctness is also covered by Go tests (`make test`), including a 1,000-way seat race (70 automated tests in all).
 
 Reproduce:
 
