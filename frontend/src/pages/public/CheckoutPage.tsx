@@ -7,7 +7,7 @@ import { ErrorNote, PageLoader } from '../../components/ui/Feedback'
 import { Icon } from '../../components/ui/Icon'
 import { mmss, useCountdown } from '../../hooks/useCountdown'
 import { formatWhen } from '../../lib/format'
-import { formatPaise } from '../../lib/money'
+import { formatPrice } from '../../lib/money'
 
 /** One key per booking, kept across reloads, so a retried payment is never charged twice. */
 function paymentKey(bookingId: string) {
@@ -50,6 +50,7 @@ export function CheckoutPage() {
   if (b.status === 'CONFIRMED') return <Navigate to={`/bookings/${b.id}`} replace />
 
   const expired = b.status === 'EXPIRED' || (b.status === 'PENDING' && left === 0)
+  const free = b.total_paise === 0
   const failed = b.status === 'FAILED'
   const urgent = left < 60
 
@@ -62,7 +63,7 @@ export function CheckoutPage() {
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="eyebrow">Checkout</p>
-          <h1 className="mt-2 font-display text-4xl">Review & pay</h1>
+          <h1 className="mt-2 font-display text-4xl">{free ? 'Confirm your tickets' : 'Review & pay'}</h1>
         </div>
         {b.status === 'PENDING' && !expired && (
           <div className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium ${urgent ? 'bg-clay-50 text-clay-700' : 'bg-pine-50 text-pine-800'}`}>
@@ -108,34 +109,40 @@ export function CheckoutPage() {
                 {it.category_name}
                 {it.seat_label ? <span className="text-ink-faint"> · Seat {it.seat_label}</span> : <span className="text-ink-faint"> × {it.quantity}</span>}
               </span>
-              <span className="tabular-nums">{formatPaise(it.unit_price_paise * it.quantity)}</span>
+              <span className="tabular-nums">{formatPrice(it.unit_price_paise * it.quantity)}</span>
             </li>
           ))}
         </ul>
         <div className="flex items-baseline justify-between bg-mist/50 px-6 py-4">
           <span className="text-sm text-ink-muted">Total</span>
-          <span className="font-display text-2xl tabular-nums">{formatPaise(b.total_paise)}</span>
+          <span className="font-display text-2xl tabular-nums">{formatPrice(b.total_paise)}</span>
         </div>
       </div>
 
       {b.status === 'PENDING' && !expired && (
         <div className="card space-y-4 p-6">
-          <div className="flex items-start gap-3 rounded-xl bg-sand-50 px-4 py-3 text-sm text-sand-700">
-            <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0" />
-            This is a demo checkout. No real payment is taken.
-          </div>
+          {free ? (
+            <p className="text-sm text-ink-muted">These tickets are free. Confirm to get your QR ticket.</p>
+          ) : (
+            <div className="flex items-start gap-3 rounded-xl bg-sand-50 px-4 py-3 text-sm text-sand-700">
+              <Icon name="info" className="mt-0.5 h-4 w-4 shrink-0" />
+              This is a demo checkout. No real payment is taken.
+            </div>
+          )}
           {pay.error && <ErrorNote>{pay.error.message}</ErrorNote>}
           <button className="btn-primary w-full py-3 text-base" disabled={pay.isPending} onClick={() => pay.mutate('success')}>
-            <Icon name="lock" />
-            {pay.isPending ? 'Processing…' : `Pay ${formatPaise(b.total_paise)}`}
+            <Icon name={free ? 'check' : 'lock'} />
+            {pay.isPending ? 'Processing…' : free ? 'Get free tickets' : `Pay ${formatPrice(b.total_paise)}`}
           </button>
           <div className="flex justify-between text-sm">
             <button className="cursor-pointer text-ink-faint hover:text-ink" disabled={release.isPending} onClick={() => release.mutate()}>
               Release my seats
             </button>
-            <button className="cursor-pointer text-ink-faint hover:text-clay-500" disabled={pay.isPending} onClick={() => pay.mutate('failure')}>
-              Simulate a failed payment
-            </button>
+            {!free && (
+              <button className="cursor-pointer text-ink-faint hover:text-clay-500" disabled={pay.isPending} onClick={() => pay.mutate('failure')}>
+                Simulate a failed payment
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
-import { formatPaise } from '../../lib/money'
 import type { PublicCategory } from '../../lib/types'
 import { Icon } from '../ui/Icon'
+import { PriceTag } from '../ui/PriceTag'
 
 type Props = {
   categories: PublicCategory[]
@@ -25,7 +25,7 @@ export function GaPicker({ categories, qty, onChange, maxTotal, disabled }: Prop
             <div className="min-w-0 flex-1">
               <div className="font-medium">{c.name}</div>
               <div className="mt-0.5 text-sm text-ink-muted">
-                {formatPaise(c.price_paise)}
+                <PriceTag price={c.price_paise} list={c.list_price_paise} discount={c.discount_percent} />
                 <span className="mx-1.5 text-line">|</span>
                 {soldOut ? (
                   <span className="text-clay-500">Sold out</span>

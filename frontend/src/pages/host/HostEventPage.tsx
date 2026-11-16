@@ -71,7 +71,7 @@ export function HostEventPage() {
             </Link>
           )}
           <Link to={`/host/events/${id}/edit`} className="btn-secondary">
-            <Icon name="edit" /> {ev.status === 'DRAFT' ? 'Edit draft' : 'Details'}
+            <Icon name="edit" /> {ev.status === 'DRAFT' ? 'Edit draft' : ev.status === 'PUBLISHED' ? 'Edit event' : 'Details'}
           </Link>
         </div>
       </header>

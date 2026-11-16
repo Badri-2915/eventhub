@@ -21,18 +21,24 @@ const (
 	maxDescLen      = 5000
 	defaultPerOrder = 10
 	defaultCutoffH  = 24
+	maxPricePaise   = 1_00_000 * 100 // ₹1,00,000 per ticket keeps order totals well inside int32
+	maxDiscount     = 90
 )
 
 var hexColor = regexp.MustCompile(`^#[0-9a-fA-F]{6}$`)
 
 // CategoryInput is one ticket category as sent by the host wizard. The client
 // may supply the id so layout cells can reference categories before saving.
+// ListPricePaise is the host's price before discount (0 = free); PricePaise,
+// what attendees pay, is derived from it. Older clients may send only PricePaise.
 type CategoryInput struct {
-	ID         *uuid.UUID `json:"id"`
-	Name       string     `json:"name"`
-	Color      string     `json:"color"`
-	PricePaise int32      `json:"price_paise"`
-	Capacity   *int32     `json:"capacity"` // GA only
+	ID              *uuid.UUID `json:"id"`
+	Name            string     `json:"name"`
+	Color           string     `json:"color"`
+	ListPricePaise  int32      `json:"list_price_paise"`
+	DiscountPercent int32      `json:"discount_percent"`
+	PricePaise      int32      `json:"price_paise"`
+	Capacity        *int32     `json:"capacity"` // GA only
 }
 
 // EventInput is the full draft state; PUT replaces everything.
@@ -137,9 +143,22 @@ func (in *EventInput) normalize() error {
 		if !hexColor.MatchString(cat.Color) {
 			return httpx.BadRequest("Category colour must look like #aabbcc")
 		}
-		if cat.PricePaise < 0 {
+		if cat.ListPricePaise == 0 {
+			cat.ListPricePaise = cat.PricePaise
+		}
+		if cat.ListPricePaise < 0 {
 			return httpx.BadRequest("Price cannot be negative")
 		}
+		if cat.ListPricePaise > maxPricePaise {
+			return httpx.BadRequest("Price can be at most ₹1,00,000 per ticket")
+		}
+		if cat.DiscountPercent < 0 || cat.DiscountPercent > maxDiscount {
+			return httpx.BadRequest(fmt.Sprintf("Discount must be between 0 and %d%%", maxDiscount))
+		}
+		if cat.ListPricePaise == 0 {
+			cat.DiscountPercent = 0 // nothing to discount on a free ticket
+		}
+		cat.PricePaise = discounted(cat.ListPricePaise, cat.DiscountPercent)
 		if in.SeatingMode == string(sqlc.SeatingModeNUMBERED) {
 			cat.Capacity = nil // seats define capacity in numbered mode
 		} else if cat.Capacity != nil && *cat.Capacity < 0 {
@@ -153,6 +172,16 @@ func (in *EventInput) normalize() error {
 	return nil
 }
 
+// discounted applies a percentage discount and rounds to whole rupees, so
+// attendees see ₹399, not ₹399.20. No discount keeps the price exact.
+func discounted(listPaise, percent int32) int32 {
+	if percent == 0 {
+		return listPaise
+	}
+	p := int64(listPaise) * int64(100-percent) // paise × 100
+	return int32((p + 5_000) / 10_000 * 100)
+}
+
 func isJSONNull(b json.RawMessage) bool {
 	s := strings.TrimSpace(string(b))
 	return s == "" || s == "null"
@@ -160,14 +189,16 @@ func isJSONNull(b json.RawMessage) bool {
 
 // CategoryDTO is a ticket category as returned to clients.
 type CategoryDTO struct {
-	ID         uuid.UUID `json:"id"`
-	Name       string    `json:"name"`
-	Color      string    `json:"color"`
-	SortOrder  int32     `json:"sort_order"`
-	PricePaise int32     `json:"price_paise"`
-	Capacity   *int32    `json:"capacity"`
-	Sold       int32     `json:"sold"`
-	Held       int32     `json:"held"`
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	Color           string    `json:"color"`
+	SortOrder       int32     `json:"sort_order"`
+	PricePaise      int32     `json:"price_paise"`
+	ListPricePaise  int32     `json:"list_price_paise"`
+	DiscountPercent int32     `json:"discount_percent"`
+	Capacity        *int32    `json:"capacity"`
+	Sold            int32     `json:"sold"`
+	Held            int32     `json:"held"`
 }
 
 // EventDTO is an event plus its categories as returned to clients.
@@ -219,7 +250,8 @@ func toEventDTO(e sqlc.Event, cats []sqlc.TicketCategory) EventDTO {
 	for _, c := range cats {
 		dto.Categories = append(dto.Categories, CategoryDTO{
 			ID: c.ID, Name: c.Name, Color: c.Color, SortOrder: c.SortOrder,
-			PricePaise: c.PricePaise, Capacity: c.Capacity, Sold: c.Sold, Held: c.Held,
+			PricePaise: c.PricePaise, ListPricePaise: c.ListPricePaise, DiscountPercent: c.DiscountPercent,
+			Capacity: c.Capacity, Sold: c.Sold, Held: c.Held,
 		})
 	}
 	return dto

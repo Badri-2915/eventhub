@@ -18,6 +18,8 @@ export type TicketCategory = {
   color: string
   sort_order: number
   price_paise: number
+  list_price_paise: number
+  discount_percent: number
   capacity: number | null
   sold: number
   held: number
@@ -51,7 +53,9 @@ export type CategoryInput = {
   id?: string
   name: string
   color: string
-  price_paise: number
+  /** Price before discount; 0 = free. The server derives price_paise from it. */
+  list_price_paise: number
+  discount_percent: number
   capacity: number | null
 }
 
@@ -86,6 +90,7 @@ export type EventCardData = {
   seating_mode: SeatingMode
   min_price_paise: number
   max_price_paise: number
+  max_discount_percent: number
   total_tickets: number
   available_tickets: number
 }
@@ -95,6 +100,8 @@ export type PublicCategory = {
   name: string
   color: string
   price_paise: number
+  list_price_paise: number
+  discount_percent: number
   total: number
   available: number
 }

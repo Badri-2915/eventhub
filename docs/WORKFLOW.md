@@ -16,14 +16,20 @@ Host dashboard → New event
   1 Details      title, genre (a cover image is picked automatically), description,
                  venue, city, address, Google Maps link, start/end, booking rules
   2 Seating      Numbered seats (films, theatre)  or  General admission (comedy, gigs)
-  3 Tickets      ticket types + prices (+ capacity for general admission)
+  3 Tickets      general admission: one price (or "Free entry"), optional discount %,
+                 number of tickets; "add another ticket type" for VIP etc.
+                 numbered: named tiers (Premium, Balcony…) with price / free / discount
   4 Layout       numbered only: grid designer (paint tiers, aisles, blocked seats,
                  presets, "preview as customer")
   5 Review       checklist → Publish
 ```
 
 Drafts autosave on every step and can be deleted. **Publish** turns the layout into
-real seats in one transaction and locks seating/prices so sold tickets stay valid.
+real seats in one transaction. After that, seating and the set of ticket types are fixed
+so sold tickets stay valid, but the host can **edit a live event any time** (Manage →
+Edit event): title, description, venue, date, location link, booking rules, prices,
+discounts and ticket counts. New prices apply to new bookings only (each booking keeps the
+price it was held at), and a ticket count can't go below what is already sold or on hold.
 
 ## 2. Attendee books
 

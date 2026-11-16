@@ -212,19 +212,21 @@ func (q *Queries) GetEventForShare(ctx context.Context, id uuid.UUID) (Event, er
 }
 
 const insertCategory = `-- name: InsertCategory :one
-INSERT INTO ticket_categories (id, event_id, name, color, sort_order, price_paise, capacity)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, event_id, name, color, sort_order, price_paise, capacity, sold, held
+INSERT INTO ticket_categories (id, event_id, name, color, sort_order, price_paise, capacity, list_price_paise, discount_percent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING id, event_id, name, color, sort_order, price_paise, capacity, sold, held, list_price_paise, discount_percent
 `
 
 type InsertCategoryParams struct {
-	ID         uuid.UUID `json:"id"`
-	EventID    uuid.UUID `json:"event_id"`
-	Name       string    `json:"name"`
-	Color      string    `json:"color"`
-	SortOrder  int32     `json:"sort_order"`
-	PricePaise int32     `json:"price_paise"`
-	Capacity   *int32    `json:"capacity"`
+	ID              uuid.UUID `json:"id"`
+	EventID         uuid.UUID `json:"event_id"`
+	Name            string    `json:"name"`
+	Color           string    `json:"color"`
+	SortOrder       int32     `json:"sort_order"`
+	PricePaise      int32     `json:"price_paise"`
+	Capacity        *int32    `json:"capacity"`
+	ListPricePaise  int32     `json:"list_price_paise"`
+	DiscountPercent int32     `json:"discount_percent"`
 }
 
 func (q *Queries) InsertCategory(ctx context.Context, arg InsertCategoryParams) (TicketCategory, error) {
@@ -236,6 +238,8 @@ func (q *Queries) InsertCategory(ctx context.Context, arg InsertCategoryParams) 
 		arg.SortOrder,
 		arg.PricePaise,
 		arg.Capacity,
+		arg.ListPricePaise,
+		arg.DiscountPercent,
 	)
 	var i TicketCategory
 	err := row.Scan(
@@ -248,6 +252,8 @@ func (q *Queries) InsertCategory(ctx context.Context, arg InsertCategoryParams) 
 		&i.Capacity,
 		&i.Sold,
 		&i.Held,
+		&i.ListPricePaise,
+		&i.DiscountPercent,
 	)
 	return i, err
 }
@@ -264,7 +270,7 @@ type InsertSeatsParams struct {
 }
 
 const listCategories = `-- name: ListCategories :many
-SELECT id, event_id, name, color, sort_order, price_paise, capacity, sold, held FROM ticket_categories WHERE event_id = $1 ORDER BY sort_order, name
+SELECT id, event_id, name, color, sort_order, price_paise, capacity, sold, held, list_price_paise, discount_percent FROM ticket_categories WHERE event_id = $1 ORDER BY sort_order, name
 `
 
 func (q *Queries) ListCategories(ctx context.Context, eventID uuid.UUID) ([]TicketCategory, error) {
@@ -286,6 +292,8 @@ func (q *Queries) ListCategories(ctx context.Context, eventID uuid.UUID) ([]Tick
 			&i.Capacity,
 			&i.Sold,
 			&i.Held,
+			&i.ListPricePaise,
+			&i.DiscountPercent,
 		); err != nil {
 			return nil, err
 		}
@@ -371,6 +379,7 @@ const listPublicEvents = `-- name: ListPublicEvents :many
 SELECT e.id, e.title, e.category, e.poster_url, e.venue_name, e.city, e.starts_at, e.seating_mode,
     COALESCE((SELECT min(price_paise) FROM ticket_categories WHERE event_id = e.id), 0)::int AS min_price_paise,
     COALESCE((SELECT max(price_paise) FROM ticket_categories WHERE event_id = e.id), 0)::int AS max_price_paise,
+    COALESCE((SELECT max(discount_percent) FROM ticket_categories WHERE event_id = e.id), 0)::int AS max_discount_percent,
     (CASE WHEN e.seating_mode = 'GA'
         THEN COALESCE((SELECT sum(capacity) FROM ticket_categories WHERE event_id = e.id), 0)
         ELSE (SELECT count(*) FROM seats WHERE event_id = e.id AND status <> 'BLOCKED')
@@ -400,18 +409,19 @@ type ListPublicEventsParams struct {
 }
 
 type ListPublicEventsRow struct {
-	ID               uuid.UUID     `json:"id"`
-	Title            string        `json:"title"`
-	Category         EventCategory `json:"category"`
-	PosterUrl        string        `json:"poster_url"`
-	VenueName        string        `json:"venue_name"`
-	City             string        `json:"city"`
-	StartsAt         *time.Time    `json:"starts_at"`
-	SeatingMode      SeatingMode   `json:"seating_mode"`
-	MinPricePaise    int32         `json:"min_price_paise"`
-	MaxPricePaise    int32         `json:"max_price_paise"`
-	TotalTickets     int32         `json:"total_tickets"`
-	AvailableTickets int32         `json:"available_tickets"`
+	ID                 uuid.UUID     `json:"id"`
+	Title              string        `json:"title"`
+	Category           EventCategory `json:"category"`
+	PosterUrl          string        `json:"poster_url"`
+	VenueName          string        `json:"venue_name"`
+	City               string        `json:"city"`
+	StartsAt           *time.Time    `json:"starts_at"`
+	SeatingMode        SeatingMode   `json:"seating_mode"`
+	MinPricePaise      int32         `json:"min_price_paise"`
+	MaxPricePaise      int32         `json:"max_price_paise"`
+	MaxDiscountPercent int32         `json:"max_discount_percent"`
+	TotalTickets       int32         `json:"total_tickets"`
+	AvailableTickets   int32         `json:"available_tickets"`
 }
 
 func (q *Queries) ListPublicEvents(ctx context.Context, arg ListPublicEventsParams) ([]ListPublicEventsRow, error) {
@@ -440,6 +450,7 @@ func (q *Queries) ListPublicEvents(ctx context.Context, arg ListPublicEventsPara
 			&i.SeatingMode,
 			&i.MinPricePaise,
 			&i.MaxPricePaise,
+			&i.MaxDiscountPercent,
 			&i.TotalTickets,
 			&i.AvailableTickets,
 		); err != nil {
@@ -687,6 +698,124 @@ func (q *Queries) UpdateDraftEvent(ctx context.Context, arg UpdateDraftEventPara
 		arg.EndsAt,
 		arg.SeatingMode,
 		arg.Layout,
+		arg.MaxPerBooking,
+		arg.CancelCutoffHours,
+		arg.MapUrl,
+	)
+	var i Event
+	err := row.Scan(
+		&i.ID,
+		&i.HostID,
+		&i.Title,
+		&i.Description,
+		&i.Category,
+		&i.PosterUrl,
+		&i.VenueName,
+		&i.City,
+		&i.Address,
+		&i.StartsAt,
+		&i.EndsAt,
+		&i.SeatingMode,
+		&i.Status,
+		&i.Layout,
+		&i.MaxPerBooking,
+		&i.CancelCutoffHours,
+		&i.CreatedAt,
+		&i.PublishedAt,
+		&i.MapUrl,
+	)
+	return i, err
+}
+
+const updateLiveCategory = `-- name: UpdateLiveCategory :one
+UPDATE ticket_categories SET
+    name = $3, color = $4, price_paise = $5, list_price_paise = $6, discount_percent = $7,
+    capacity = CASE WHEN capacity IS NULL THEN NULL ELSE $8::int END
+WHERE id = $1 AND event_id = $2
+RETURNING id, event_id, name, color, sort_order, price_paise, capacity, sold, held, list_price_paise, discount_percent
+`
+
+type UpdateLiveCategoryParams struct {
+	ID              uuid.UUID   `json:"id"`
+	EventID         uuid.UUID   `json:"event_id"`
+	Name            string      `json:"name"`
+	Color           string      `json:"color"`
+	PricePaise      int32       `json:"price_paise"`
+	ListPricePaise  int32       `json:"list_price_paise"`
+	DiscountPercent int32       `json:"discount_percent"`
+	Capacity        pgtype.Int4 `json:"capacity"`
+}
+
+// New prices apply to new holds only: booking_items keep the price paid. A GA
+// capacity below sold + held fails the table's CHECK constraint.
+func (q *Queries) UpdateLiveCategory(ctx context.Context, arg UpdateLiveCategoryParams) (TicketCategory, error) {
+	row := q.db.QueryRow(ctx, updateLiveCategory,
+		arg.ID,
+		arg.EventID,
+		arg.Name,
+		arg.Color,
+		arg.PricePaise,
+		arg.ListPricePaise,
+		arg.DiscountPercent,
+		arg.Capacity,
+	)
+	var i TicketCategory
+	err := row.Scan(
+		&i.ID,
+		&i.EventID,
+		&i.Name,
+		&i.Color,
+		&i.SortOrder,
+		&i.PricePaise,
+		&i.Capacity,
+		&i.Sold,
+		&i.Held,
+		&i.ListPricePaise,
+		&i.DiscountPercent,
+	)
+	return i, err
+}
+
+const updateLiveEvent = `-- name: UpdateLiveEvent :one
+UPDATE events SET
+    title = $3, description = $4, category = $5, poster_url = $6,
+    venue_name = $7, city = $8, address = $9, starts_at = $10, ends_at = $11,
+    max_per_booking = $12, cancel_cutoff_hours = $13, map_url = $14
+WHERE id = $1 AND host_id = $2 AND status = 'PUBLISHED'
+RETURNING id, host_id, title, description, category, poster_url, venue_name, city, address, starts_at, ends_at, seating_mode, status, layout, max_per_booking, cancel_cutoff_hours, created_at, published_at, map_url
+`
+
+type UpdateLiveEventParams struct {
+	ID                uuid.UUID     `json:"id"`
+	HostID            uuid.UUID     `json:"host_id"`
+	Title             string        `json:"title"`
+	Description       string        `json:"description"`
+	Category          EventCategory `json:"category"`
+	PosterUrl         string        `json:"poster_url"`
+	VenueName         string        `json:"venue_name"`
+	City              string        `json:"city"`
+	Address           string        `json:"address"`
+	StartsAt          *time.Time    `json:"starts_at"`
+	EndsAt            *time.Time    `json:"ends_at"`
+	MaxPerBooking     int32         `json:"max_per_booking"`
+	CancelCutoffHours int32         `json:"cancel_cutoff_hours"`
+	MapUrl            string        `json:"map_url"`
+}
+
+// Published events: everything except seating mode and layout can change.
+func (q *Queries) UpdateLiveEvent(ctx context.Context, arg UpdateLiveEventParams) (Event, error) {
+	row := q.db.QueryRow(ctx, updateLiveEvent,
+		arg.ID,
+		arg.HostID,
+		arg.Title,
+		arg.Description,
+		arg.Category,
+		arg.PosterUrl,
+		arg.VenueName,
+		arg.City,
+		arg.Address,
+		arg.StartsAt,
+		arg.EndsAt,
 		arg.MaxPerBooking,
 		arg.CancelCutoffHours,
 		arg.MapUrl,

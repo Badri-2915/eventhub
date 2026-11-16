@@ -11,7 +11,7 @@ import { Icon } from '../../components/ui/Icon'
 import { eventKey, seatsKey, useEventStream } from '../../hooks/useEventStream'
 import { useMe } from '../../hooks/useMe'
 import { categoryLabel, directionsUrl, formatLongDate, formatTime, plural } from '../../lib/format'
-import { formatPaise } from '../../lib/money'
+import { formatPaise, formatPrice } from '../../lib/money'
 import type { Seat } from '../../lib/types'
 
 export function EventPage() {
@@ -65,7 +65,7 @@ export function EventPage() {
     }
     return ev.categories
       .filter((c) => (qty[c.id] ?? 0) > 0)
-      .map((c) => ({ key: c.id, name: c.name, color: c.color, count: qty[c.id], detail: `${formatPaise(c.price_paise)} each`, amount: c.price_paise * qty[c.id] }))
+      .map((c) => ({ key: c.id, name: c.name, color: c.color, count: qty[c.id], detail: c.price_paise === 0 ? 'Free' : `${formatPaise(c.price_paise)} each`, amount: c.price_paise * qty[c.id] }))
   }, [ev, numbered, selected, seatById, catById, qty])
 
   const count = lines.reduce((a, l) => a + l.count, 0)
@@ -228,14 +228,14 @@ export function EventPage() {
                       </div>
                       <div className="truncate text-ink-faint">{l.detail}</div>
                     </div>
-                    <span className="tabular-nums">{formatPaise(l.amount)}</span>
+                    <span className="tabular-nums">{formatPrice(l.amount)}</span>
                   </li>
                 ))}
               </ul>
             )}
             <div className="mt-5 flex items-baseline justify-between border-t border-line pt-4">
               <span className="text-sm text-ink-muted">{plural(count, 'ticket')}</span>
-              <span className="font-display text-2xl tabular-nums">{formatPaise(total)}</span>
+              <span className="font-display text-2xl tabular-nums">{count > 0 ? formatPrice(total) : formatPaise(0)}</span>
             </div>
             {(notice || hold.error) && (
               <div className="mt-4">

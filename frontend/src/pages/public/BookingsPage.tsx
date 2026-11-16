@@ -6,7 +6,7 @@ import { EventCover } from '../../components/events/EventCover'
 import { Badge, EmptyState, ErrorNote, PageLoader } from '../../components/ui/Feedback'
 import { Icon } from '../../components/ui/Icon'
 import { formatWhen, plural } from '../../lib/format'
-import { formatPaise } from '../../lib/money'
+import { formatPrice } from '../../lib/money'
 import type { BookingSummary } from '../../lib/types'
 
 const tabs = ['Upcoming', 'Past', 'Cancelled'] as const
@@ -78,7 +78,7 @@ export function BookingsPage() {
                 </p>
               </div>
               <div className="text-right">
-                <div className="font-medium tabular-nums">{formatPaise(b.total_paise)}</div>
+                <div className="font-medium tabular-nums">{formatPrice(b.total_paise)}</div>
                 <div className="text-sm text-ink-faint">{plural(b.ticket_count, 'ticket')}</div>
               </div>
               <Icon name="arrowRight" className="h-4 w-4 text-ink-faint" />

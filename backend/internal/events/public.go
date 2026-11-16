@@ -30,17 +30,20 @@ type EventCard struct {
 	SeatingMode      string     `json:"seating_mode"`
 	MinPricePaise    int32      `json:"min_price_paise"`
 	MaxPricePaise    int32      `json:"max_price_paise"`
+	MaxDiscount      int32      `json:"max_discount_percent"`
 	TotalTickets     int32      `json:"total_tickets"`
 	AvailableTickets int32      `json:"available_tickets"`
 }
 
 type PublicCategory struct {
-	ID         uuid.UUID `json:"id"`
-	Name       string    `json:"name"`
-	Color      string    `json:"color"`
-	PricePaise int32     `json:"price_paise"`
-	Total      int32     `json:"total"`
-	Available  int32     `json:"available"`
+	ID              uuid.UUID `json:"id"`
+	Name            string    `json:"name"`
+	Color           string    `json:"color"`
+	PricePaise      int32     `json:"price_paise"`
+	ListPricePaise  int32     `json:"list_price_paise"`
+	DiscountPercent int32     `json:"discount_percent"`
+	Total           int32     `json:"total"`
+	Available       int32     `json:"available"`
 }
 
 type PublicEvent struct {
@@ -104,7 +107,7 @@ func (s *Service) ListPublic(ctx context.Context, q, city, category string, page
 		out = append(out, EventCard{
 			ID: r.ID, Title: r.Title, Category: string(r.Category), PosterURL: r.PosterUrl,
 			VenueName: r.VenueName, City: r.City, StartsAt: r.StartsAt, SeatingMode: string(r.SeatingMode),
-			MinPricePaise: r.MinPricePaise, MaxPricePaise: r.MaxPricePaise,
+			MinPricePaise: r.MinPricePaise, MaxPricePaise: r.MaxPricePaise, MaxDiscount: r.MaxDiscountPercent,
 			TotalTickets: r.TotalTickets, AvailableTickets: r.AvailableTickets,
 		})
 	}
@@ -147,7 +150,10 @@ func (s *Service) GetPublic(ctx context.Context, id uuid.UUID) (PublicEvent, err
 		}
 	}
 	for _, c := range cats {
-		pc := PublicCategory{ID: c.ID, Name: c.Name, Color: c.Color, PricePaise: c.PricePaise}
+		pc := PublicCategory{
+			ID: c.ID, Name: c.Name, Color: c.Color,
+			PricePaise: c.PricePaise, ListPricePaise: c.ListPricePaise, DiscountPercent: c.DiscountPercent,
+		}
 		if ev.SeatingMode == sqlc.SeatingModeGA {
 			if c.Capacity != nil {
 				pc.Total = *c.Capacity

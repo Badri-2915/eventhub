@@ -1,8 +1,9 @@
 import { useMemo, type CSSProperties } from 'react'
-import { formatPaise } from '../../lib/money'
+import { formatPrice } from '../../lib/money'
+import { PriceTag } from '../ui/PriceTag'
 import type { Seat } from '../../lib/types'
 
-export type SeatCategory = { id: string; name: string; color: string; price_paise: number }
+export type SeatCategory = { id: string; name: string; color: string; price_paise: number; list_price_paise?: number; discount_percent?: number }
 
 type Props = {
   grid: { rows: number; cols: number }
@@ -99,7 +100,7 @@ function SeatButton({
   onToggle?: (s: Seat) => void
 }) {
   const free = seat.status === 'AVAILABLE'
-  const title = `${seat.label}${category ? ` · ${category.name} · ${formatPaise(category.price_paise)}` : ''} — ${selected ? 'Selected' : statusText[seat.status]}`
+  const title = `${seat.label}${category ? ` · ${category.name} · ${formatPrice(category.price_paise)}` : ''} — ${selected ? 'Selected' : statusText[seat.status]}`
   const base = 'grid place-items-center rounded-t-[7px] rounded-b-[4px] text-[9px] font-semibold transition-all duration-150'
 
   if (seat.status === 'BLOCKED') {
@@ -148,7 +149,7 @@ export function SeatLegend({ categories }: { categories: SeatCategory[] }) {
       {categories.map((c) => (
         <span key={c.id} className="flex items-center gap-1.5">
           <span className={`${swatch} bg-white ring-[1.5px] ring-inset`} style={{ ['--tw-ring-color' as string]: c.color }} />
-          {c.name} · {formatPaise(c.price_paise)}
+          {c.name} · <PriceTag price={c.price_paise} list={c.list_price_paise} discount={c.discount_percent} />
         </span>
       ))}
       <span className="h-4 w-px bg-line" />

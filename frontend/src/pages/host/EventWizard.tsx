@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type InputHTMLAttributes, type ReactNode } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { hostApi } from '../../api/endpoints'
 import { LayoutDesigner } from '../../components/host/LayoutDesigner'
 import { Badge, ErrorNote, PageLoader } from '../../components/ui/Feedback'
 import { Icon } from '../../components/ui/Icon'
+import { PriceTag } from '../../components/ui/PriceTag'
 import { categoryLabel } from '../../lib/format'
 import { AISLE, BLOCKED, isLayout, sanitizeLayout } from '../../lib/layout'
-import { formatPaise, rupeesToPaise } from '../../lib/money'
+import { discountedPaise, formatPaise, formatPrice, rupeesToPaise } from '../../lib/money'
 import { EVENT_CATEGORIES, type EventInput, type HostEvent, type Layout, type SeatingMode } from '../../lib/types'
 
 type StepId = 'details' | 'seating' | 'tickets' | 'layout' | 'review'
@@ -20,14 +21,30 @@ const STEP_TITLES: Record<StepId, string> = {
 }
 const PALETTE = ['#B98B2F', '#5B7FA6', '#3B7D66', '#A65D57', '#6E8B74', '#7C7466']
 
-// Form state keeps user-typed strings; conversion to API types happens on save.
-type CatForm = { id: string; name: string; color: string; price: string; capacity: string }
-type Form = Omit<EventInput, 'categories' | 'starts_at' | 'ends_at' | 'layout'> & {
+// Form state keeps user-typed strings (so a box can be empty while typing);
+// conversion to API types happens on save.
+type CatForm = { id: string; name: string; color: string; free: boolean; price: string; discount: string; capacity: string }
+type Form = Omit<EventInput, 'categories' | 'starts_at' | 'ends_at' | 'layout' | 'max_per_booking' | 'cancel_cutoff_hours'> & {
   starts_at: string // datetime-local value
   ends_at: string
   layout: Layout | null
+  max_per_booking: string
+  cancel_cutoff_hours: string
   categories: CatForm[]
 }
+
+const GA_DEFAULT_NAME = 'General admission'
+const NUMBERED_DEFAULT_NAME = 'Standard'
+const newCategory = (name: string, color: string): CatForm => ({
+  id: crypto.randomUUID(),
+  name,
+  color,
+  free: false,
+  price: '',
+  discount: '',
+  capacity: '',
+})
+const catPrice = (c: CatForm) => (c.free ? 0 : discountedPaise(rupeesToPaise(c.price), Number(c.discount) || 0))
 
 // A factory, not a constant: category ids are primary keys, so every new event needs fresh ones.
 const emptyForm = (): Form => ({
@@ -43,12 +60,9 @@ const emptyForm = (): Form => ({
   ends_at: '',
   seating_mode: 'GA',
   layout: null,
-  max_per_booking: 10,
-  cancel_cutoff_hours: 24,
-  categories: [
-    { id: crypto.randomUUID(), name: 'Premium', color: PALETTE[0], price: '999', capacity: '30' },
-    { id: crypto.randomUUID(), name: 'Regular', color: PALETTE[2], price: '499', capacity: '70' },
-  ],
+  max_per_booking: '10',
+  cancel_cutoff_hours: '24',
+  categories: [newCategory(GA_DEFAULT_NAME, PALETTE[2])],
 })
 
 function toLocalInput(iso: string | null): string {
@@ -63,11 +77,16 @@ function fromEvent(ev: HostEvent): Form {
     starts_at: toLocalInput(ev.starts_at),
     ends_at: toLocalInput(ev.ends_at),
     layout: isLayout(ev.layout) ? ev.layout : null,
+    max_per_booking: String(ev.max_per_booking),
+    cancel_cutoff_hours: String(ev.cancel_cutoff_hours),
     categories: ev.categories.map((c) => ({
       id: c.id,
       name: c.name,
       color: c.color,
-      price: String(c.price_paise / 100),
+      // A draft stores "no price yet" as 0 too, so only a live event's 0 means free.
+      free: ev.status !== 'DRAFT' && c.list_price_paise === 0,
+      price: c.list_price_paise === 0 ? '' : String(c.list_price_paise / 100),
+      discount: c.discount_percent ? String(c.discount_percent) : '',
       capacity: c.capacity == null ? '' : String(c.capacity),
     })),
   }
@@ -80,11 +99,14 @@ function toInput(f: Form): EventInput {
     starts_at: f.starts_at ? new Date(f.starts_at).toISOString() : null,
     ends_at: f.ends_at ? new Date(f.ends_at).toISOString() : null,
     layout: f.seating_mode === 'NUMBERED' && f.layout ? sanitizeLayout(f.layout, ids) : null,
+    max_per_booking: Number(f.max_per_booking) || 0,
+    cancel_cutoff_hours: Number(f.cancel_cutoff_hours) || 0,
     categories: f.categories.map((c) => ({
       id: c.id,
       name: c.name,
       color: c.color,
-      price_paise: rupeesToPaise(c.price),
+      list_price_paise: c.free ? 0 : rupeesToPaise(c.price),
+      discount_percent: c.free ? 0 : Number(c.discount) || 0,
       capacity: f.seating_mode === 'GA' && c.capacity !== '' ? Number(c.capacity) : null,
     })),
   }
@@ -98,8 +120,16 @@ function publishIssues(f: Form): string[] {
   else if (new Date(f.starts_at) <= new Date()) issues.push('Start time must be in the future')
   if (!f.venue_name.trim() || !f.city.trim()) issues.push('Add the venue name and city')
   if (f.categories.length === 0) issues.push('Add at least one ticket category')
-  if (f.categories.some((c) => !c.name.trim())) issues.push('Every ticket category needs a name')
-  if (f.seating_mode === 'GA' && f.categories.some((c) => !(Number(c.capacity) > 0))) issues.push('Every category needs a capacity')
+  if (f.categories.some((c) => !c.name.trim())) issues.push('Every ticket type needs a name')
+  for (const c of f.categories) {
+    const name = f.categories.length > 1 ? c.name || 'a ticket type' : 'your tickets'
+    if (!c.free && !(Number(c.price) > 0)) issues.push(`Set a price for ${name}, or mark it free`)
+    if (Number(c.discount) > 90) issues.push('Discounts can be at most 90%')
+    if (f.seating_mode === 'GA' && !(Number(c.capacity) > 0)) issues.push(`Set how many tickets to sell for ${name}`)
+  }
+  const perBooking = Number(f.max_per_booking)
+  if (!(perBooking >= 1 && perBooking <= 50)) issues.push('Max tickets per booking must be between 1 and 50')
+  if (f.cancel_cutoff_hours === '') issues.push('Set the free-cancellation hours (0 is fine)')
   if (f.seating_mode === 'NUMBERED') {
     if (!f.layout) issues.push('Design the seating layout')
     else {
@@ -124,14 +154,22 @@ export function EventWizard() {
   const [savedAt, setSavedAt] = useState<Date | null>(null)
 
   const existing = useQuery({ queryKey: ['host', 'event', id], queryFn: () => hostApi.get(id!), enabled: !!id })
+  // Load the server copy once per event; later saves must not overwrite what the host is typing.
+  const loaded = useRef<string | null>(null)
   useEffect(() => {
-    if (existing.data) setForm(fromEvent(existing.data))
+    if (existing.data && loaded.current !== existing.data.id) {
+      loaded.current = existing.data.id
+      setForm(fromEvent(existing.data))
+    }
   }, [existing.data])
 
   const steps: StepId[] =
     form.seating_mode === 'NUMBERED' ? ['details', 'seating', 'tickets', 'layout', 'review'] : ['details', 'seating', 'tickets', 'review']
   const idx = Math.max(0, steps.indexOf(step))
-  const readOnly = existing.data != null && existing.data.status !== 'DRAFT'
+  const status = existing.data?.status ?? 'DRAFT'
+  // Live events stay editable (details, prices, capacity); seating and ticket types are fixed.
+  const live = status === 'PUBLISHED'
+  const readOnly = status === 'CANCELLED' || status === 'COMPLETED'
   const issues = useMemo(() => publishIssues(form), [form])
 
   const save = useMutation({
@@ -158,7 +196,8 @@ export function EventWizard() {
 
   const set = <K extends keyof Form>(key: K, value: Form[K]) => setForm((f) => ({ ...f, [key]: value }))
   const go = (next: StepId) => {
-    if (!readOnly && form.title.trim()) save.mutate(form)
+    // Drafts autosave as you move between steps; live edits wait for "Save changes".
+    if (!readOnly && !live && form.title.trim()) save.mutate(form)
     setStep(next)
   }
 
@@ -166,7 +205,7 @@ export function EventWizard() {
   if (existing.error) return <ErrorNote>{existing.error.message}</ErrorNote>
 
   const current = steps[idx]
-  const designerCats = form.categories.map((c) => ({ id: c.id, name: c.name, color: c.color, price_paise: rupeesToPaise(c.price) }))
+  const designerCats = form.categories.map((c) => ({ id: c.id, name: c.name, color: c.color, price_paise: catPrice(c) }))
 
   return (
     <div className={`mx-auto space-y-8 ${current === 'layout' ? 'max-w-6xl' : 'max-w-3xl'}`}>
@@ -179,11 +218,13 @@ export function EventWizard() {
         </div>
         <div className="text-sm text-ink-faint">
           {readOnly ? (
-            <Badge tone="pine">Published · read-only</Badge>
+            <Badge tone="neutral">{status.toLowerCase()} · read-only</Badge>
           ) : save.isPending ? (
             'Saving…'
           ) : savedAt ? (
-            `Draft saved ${savedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+            `${live ? 'Changes' : 'Draft'} saved ${savedAt.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`
+          ) : live ? (
+            <Badge tone="pine">Live · edits apply to new bookings</Badge>
           ) : (
             'Draft'
           )}
@@ -208,23 +249,24 @@ export function EventWizard() {
         ))}
       </ol>
 
-      <fieldset disabled={readOnly && current !== 'layout'} className="card space-y-8 p-6 sm:p-8">
+      <fieldset disabled={(readOnly && current !== 'layout') || (live && current === 'seating')} className="card space-y-8 p-6 sm:p-8">
         {current === 'details' && <DetailsStep form={form} set={set} />}
-        {current === 'seating' && <SeatingStep mode={form.seating_mode} onChange={(m) => set('seating_mode', m)} />}
-        {current === 'tickets' && <TicketsStep form={form} set={set} />}
+        {current === 'seating' && <SeatingStep mode={form.seating_mode} onChange={(m) => setForm((f) => switchMode(f, m))} locked={live} />}
+        {current === 'tickets' && <TicketsStep form={form} set={set} live={live} />}
         {current === 'layout' && (
           <LayoutDesigner
             layout={form.layout}
             categories={designerCats}
             onChange={(l) => set('layout', l)}
             stageLabel={form.category === 'MOVIE' ? 'Screen' : 'Stage'}
-            readOnly={readOnly}
+            readOnly={readOnly || live}
           />
         )}
-        {current === 'review' && <ReviewStep form={form} issues={readOnly ? [] : issues} />}
+        {current === 'review' && <ReviewStep form={form} issues={readOnly ? [] : issues} live={live} />}
       </fieldset>
 
       {(save.error || publish.error) && <ErrorNote>{(publish.error ?? save.error)!.message}</ErrorNote>}
+      {live && issues.length > 0 && <ErrorNote>Before saving: {issues.join(' · ')}</ErrorNote>}
 
       <div className="flex items-center justify-between">
         <button className="btn-quiet" disabled={idx === 0} onClick={() => go(steps[idx - 1])}>
@@ -232,15 +274,19 @@ export function EventWizard() {
         </button>
         <div className="flex gap-2">
           {!readOnly && (
-            <button className="btn-secondary" disabled={save.isPending || !form.title.trim()} onClick={() => save.mutate(form)}>
-              Save draft
+            <button
+              className={live ? 'btn-primary' : 'btn-secondary'}
+              disabled={save.isPending || !form.title.trim() || (live && issues.length > 0)}
+              onClick={() => save.mutate(form)}
+            >
+              {live ? 'Save changes' : 'Save draft'}
             </button>
           )}
           {idx < steps.length - 1 ? (
-            <button className="btn-primary" onClick={() => go(steps[idx + 1])}>
+            <button className={live ? 'btn-secondary' : 'btn-primary'} onClick={() => go(steps[idx + 1])}>
               Continue <Icon name="arrowRight" />
             </button>
-          ) : readOnly ? (
+          ) : readOnly || live ? (
             <Link to={`/events/${id}`} className="btn-primary">
               View public page <Icon name="arrowRight" />
             </Link>
@@ -339,11 +385,13 @@ function DetailsStep({ form, set }: StepProps) {
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
             <label className="label">Max tickets per booking</label>
-            <input type="number" min={1} max={50} className="input" value={form.max_per_booking} onChange={(e) => set('max_per_booking', Number(e.target.value))} />
+            <NumField value={form.max_per_booking} onChange={(v) => set('max_per_booking', v)} placeholder="10" />
+            <p className="mt-1.5 text-xs text-ink-faint">Between 1 and 50.</p>
           </div>
           <div>
             <label className="label">Free cancellation until (hours before start)</label>
-            <input type="number" min={0} className="input" value={form.cancel_cutoff_hours} onChange={(e) => set('cancel_cutoff_hours', Number(e.target.value))} />
+            <NumField value={form.cancel_cutoff_hours} onChange={(v) => set('cancel_cutoff_hours', v)} placeholder="24" />
+            <p className="mt-1.5 text-xs text-ink-faint">0 means guests can cancel until the event starts.</p>
           </div>
         </div>
       </Section>
@@ -351,13 +399,19 @@ function DetailsStep({ form, set }: StepProps) {
   )
 }
 
-function SeatingStep({ mode, onChange }: { mode: SeatingMode; onChange: (m: SeatingMode) => void }) {
+/** Switching seating keeps ticket types but swaps the untouched default name. */
+function switchMode(f: Form, mode: SeatingMode): Form {
+  const [from, to] = mode === 'GA' ? [NUMBERED_DEFAULT_NAME, GA_DEFAULT_NAME] : [GA_DEFAULT_NAME, NUMBERED_DEFAULT_NAME]
+  return { ...f, seating_mode: mode, categories: f.categories.map((c) => (c.name === from ? { ...c, name: to } : c)) }
+}
+
+function SeatingStep({ mode, onChange, locked }: { mode: SeatingMode; onChange: (m: SeatingMode) => void; locked: boolean }) {
   const options: { value: SeatingMode; title: string; body: string; icon: 'grid' | 'users' }[] = [
     { value: 'NUMBERED', title: 'Numbered seats', body: 'Films, theatre and stage shows. Guests pick exact seats on a layout you design.', icon: 'grid' },
     { value: 'GA', title: 'General admission', body: 'Comedy clubs, gigs and workshops. Guests choose a ticket type and quantity.', icon: 'users' },
   ]
   return (
-    <Section title="How will people sit?" hint="This can't be changed after you publish.">
+    <Section title="How will people sit?" hint={locked ? 'Seating is fixed once an event is live.' : "This can't be changed after you publish."}>
       <div className="grid gap-4 sm:grid-cols-2">
         {options.map((o) => {
           const active = mode === o.value
@@ -381,52 +435,73 @@ function SeatingStep({ mode, onChange }: { mode: SeatingMode; onChange: (m: Seat
   )
 }
 
-function TicketsStep({ form, set }: StepProps) {
+/** Digits-only text box: can be emptied while typing and never shows "01000". */
+function NumField({
+  value,
+  onChange,
+  decimals = false,
+  ...rest
+}: { value: string; onChange: (v: string) => void; decimals?: boolean } & Omit<InputHTMLAttributes<HTMLInputElement>, 'value' | 'onChange'>) {
+  const clean = (raw: string) => {
+    let v = raw.replace(decimals ? /[^\d.]/g : /\D/g, '')
+    if (decimals) {
+      const [whole, ...rest] = v.split('.')
+      v = rest.length ? `${whole}.${rest.join('').slice(0, 2)}` : whole
+    }
+    return v.replace(/^0+(?=\d)/, '')
+  }
+  return (
+    <input
+      {...rest}
+      className="input tabular-nums disabled:bg-mist/60 disabled:text-ink-faint"
+      type="text"
+      inputMode={decimals ? 'decimal' : 'numeric'}
+      value={value}
+      onChange={(e) => onChange(clean(e.target.value))}
+    />
+  )
+}
+
+function TicketsStep({ form, set, live }: StepProps & { live: boolean }) {
   const ga = form.seating_mode === 'GA'
   const cats = form.categories
+  const simple = ga && cats.length === 1 // one ticket type: no name or colour to fill in
   const update = (i: number, patch: Partial<CatForm>) => set('categories', cats.map((c, j) => (j === i ? { ...c, ...patch } : c)))
-  const add = () =>
-    set('categories', [...cats, { id: crypto.randomUUID(), name: '', color: PALETTE[cats.length % PALETTE.length], price: '', capacity: ga ? '0' : '' }])
+  const add = () => set('categories', [...cats, newCategory('', PALETTE[cats.length % PALETTE.length])])
+  const remove = (i: number) => set('categories', cats.filter((_, j) => j !== i))
 
   const totalCap = cats.reduce((s, c) => s + (Number(c.capacity) || 0), 0)
-  const maxRevenue = cats.reduce((s, c) => s + rupeesToPaise(c.price) * (Number(c.capacity) || 0), 0)
-  const cols = ga ? 'grid-cols-[2rem_1fr_6.5rem_6.5rem_2rem]' : 'grid-cols-[2rem_1fr_7rem_2rem]'
+  const maxRevenue = cats.reduce((s, c) => s + catPrice(c) * (Number(c.capacity) || 0), 0)
 
   return (
     <Section
-      title="Ticket types"
-      hint={ga ? 'Set a price and how many of each you will sell.' : 'List them from most to least valuable. You will paint them onto seats next.'}
+      title={simple ? 'Tickets' : 'Ticket types'}
+      hint={
+        live
+          ? 'Change prices, discounts and ticket counts any time. New prices apply to new bookings; people who already booked keep theirs.'
+          : ga
+            ? 'Set the price and how many tickets you will sell. Add a discount if you like.'
+            : 'List them from most to least valuable. You will paint them onto seats next.'
+      }
     >
-      <div className="space-y-2">
-        <div className={`grid gap-3 text-xs font-medium text-ink-faint ${cols}`}>
-          <span />
-          <span>Name</span>
-          <span>Price (₹)</span>
-          {ga && <span>Capacity</span>}
-          <span />
-        </div>
+      <div className="space-y-3">
         {cats.map((c, i) => (
-          <div key={c.id} className={`grid items-center gap-3 ${cols}`}>
-            <label className="relative h-8 w-8 cursor-pointer overflow-hidden rounded-lg ring-1 ring-line" style={{ background: c.color }} title="Colour">
-              <input type="color" value={c.color} onChange={(e) => update(i, { color: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" />
-            </label>
-            <input className="input" value={c.name} onChange={(e) => update(i, { name: e.target.value })} placeholder="e.g. Premium" />
-            <input className="input" type="number" min={0} value={c.price} onChange={(e) => update(i, { price: e.target.value })} />
-            {ga && <input className="input" type="number" min={0} value={c.capacity} onChange={(e) => update(i, { capacity: e.target.value })} />}
-            <button
-              type="button"
-              className="cursor-pointer text-ink-faint transition hover:text-clay-500"
-              onClick={() => set('categories', cats.filter((_, j) => j !== i))}
-              aria-label="Remove"
-            >
-              <Icon name="x" />
-            </button>
-          </div>
+          <TicketCard
+            key={c.id}
+            c={c}
+            ga={ga}
+            showName={!simple}
+            canRemove={!live && cats.length > 1}
+            onChange={(patch) => update(i, patch)}
+            onRemove={() => remove(i)}
+          />
         ))}
       </div>
-      <button type="button" className="btn-quiet -ml-3 text-pine-700" onClick={add}>
-        <Icon name="plus" /> Add ticket type
-      </button>
+      {!live && (
+        <button type="button" className="btn-quiet -ml-3 text-pine-700" onClick={add}>
+          <Icon name="plus" /> {simple ? 'Add another ticket type (e.g. VIP)' : 'Add ticket type'}
+        </button>
+      )}
       {ga && (
         <div className="flex justify-between rounded-xl bg-mist/60 px-4 py-3 text-sm">
           <span className="text-ink-muted">{totalCap} tickets in total</span>
@@ -439,7 +514,70 @@ function TicketsStep({ form, set }: StepProps) {
   )
 }
 
-function ReviewStep({ form, issues }: { form: Form; issues: string[] }) {
+function TicketCard({
+  c,
+  ga,
+  showName,
+  canRemove,
+  onChange,
+  onRemove,
+}: {
+  c: CatForm
+  ga: boolean
+  showName: boolean
+  canRemove: boolean
+  onChange: (patch: Partial<CatForm>) => void
+  onRemove: () => void
+}) {
+  const list = rupeesToPaise(c.price)
+  const pays = catPrice(c)
+  return (
+    <div className="space-y-4 rounded-2xl p-4 ring-1 ring-line sm:p-5">
+      {showName && (
+        <div className="flex items-center gap-3">
+          <label className="relative h-9 w-9 shrink-0 cursor-pointer overflow-hidden rounded-lg ring-1 ring-line" style={{ background: c.color }} title="Colour">
+            <input type="color" value={c.color} onChange={(e) => onChange({ color: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" />
+          </label>
+          <input className="input" value={c.name} onChange={(e) => onChange({ name: e.target.value })} placeholder={ga ? 'e.g. VIP, Early bird' : 'e.g. Premium, Balcony'} />
+          {canRemove && (
+            <button type="button" className="cursor-pointer p-1 text-ink-faint transition hover:text-clay-500" onClick={onRemove} aria-label="Remove ticket type">
+              <Icon name="x" />
+            </button>
+          )}
+        </div>
+      )}
+      <div className={`grid gap-4 ${ga ? 'sm:grid-cols-3' : 'sm:grid-cols-2'}`}>
+        <div>
+          <label className="label">Price per ticket (₹)</label>
+          <NumField decimals value={c.free ? '' : c.price} onChange={(v) => onChange({ price: v })} disabled={c.free} placeholder={c.free ? 'Free' : 'e.g. 499'} />
+          <label className="mt-2 flex cursor-pointer items-center gap-2 text-sm text-ink-muted">
+            <input type="checkbox" className="h-4 w-4 accent-pine-700" checked={c.free} onChange={(e) => onChange({ free: e.target.checked })} />
+            Free entry
+          </label>
+        </div>
+        <div>
+          <label className="label">
+            Discount % <span className="text-ink-faint">(optional)</span>
+          </label>
+          <NumField value={c.free ? '' : c.discount} onChange={(v) => onChange({ discount: v.slice(0, 2) })} disabled={c.free} placeholder="e.g. 10" />
+        </div>
+        {ga && (
+          <div>
+            <label className="label">Number of tickets</label>
+            <NumField value={c.capacity} onChange={(v) => onChange({ capacity: v })} placeholder="e.g. 100" />
+          </div>
+        )}
+      </div>
+      {(c.free || list > 0) && (
+        <p className="text-sm text-ink-muted">
+          Guests pay <PriceTag price={pays} list={c.free ? 0 : list} discount={c.free ? 0 : Number(c.discount) || 0} className="font-medium text-ink" />
+        </p>
+      )}
+    </div>
+  )
+}
+
+function ReviewStep({ form, issues, live }: { form: Form; issues: string[]; live: boolean }) {
   const seatCount = form.layout?.cells.flat().filter((c) => c !== AISLE && c !== BLOCKED && c !== '').length ?? 0
   const rows: [string, string][] = [
     ['Title', form.title || '—'],
@@ -451,7 +589,14 @@ function ReviewStep({ form, issues }: { form: Form; issues: string[] }) {
     ['Per booking', `Up to ${form.max_per_booking} tickets`],
   ]
   return (
-    <Section title="Ready to publish?" hint="After publishing, seating and capacities are locked so sold tickets stay valid.">
+    <Section
+      title={live ? 'Review changes' : 'Ready to publish?'}
+      hint={
+        live
+          ? 'Click "Save changes" to update the live event.'
+          : 'After publishing, seating and ticket types are fixed. Details, prices and ticket counts can still be edited.'
+      }
+    >
       <dl className="divide-y divide-line rounded-xl ring-1 ring-line">
         {rows.map(([k, v]) => (
           <div key={k} className="grid grid-cols-[8rem_1fr] gap-4 px-4 py-3 text-sm">
@@ -464,7 +609,8 @@ function ReviewStep({ form, issues }: { form: Form; issues: string[] }) {
         {form.categories.map((c) => (
           <li key={c.id} className="flex items-center gap-2 rounded-full bg-mist px-3 py-1 text-sm">
             <span className="h-2 w-2 rounded-full" style={{ background: c.color }} />
-            {c.name || 'Untitled'} · {formatPaise(rupeesToPaise(c.price))}
+            {c.name || 'Untitled'} · {formatPrice(catPrice(c))}
+            {!c.free && Number(c.discount) > 0 && <span className="text-pine-700">{c.discount}% off</span>}
             {form.seating_mode === 'GA' && <span className="text-ink-faint">× {c.capacity || 0}</span>}
           </li>
         ))}

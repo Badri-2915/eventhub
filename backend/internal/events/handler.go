@@ -89,7 +89,7 @@ func (h *Handler) update(c *gin.Context) {
 	if !httpx.BindJSON(c, &in) {
 		return
 	}
-	ev, err := h.svc.UpdateDraft(c, auth.UserID(c), id, in)
+	ev, err := h.svc.Update(c, auth.UserID(c), id, in)
 	if err != nil {
 		httpx.Abort(c, err)
 		return

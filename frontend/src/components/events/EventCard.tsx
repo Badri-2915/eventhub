@@ -24,8 +24,17 @@ export function EventCard({ ev }: { ev: EventCardData }) {
         </div>
         <div className="flex items-center justify-between border-t border-line pt-3">
           <span className="text-sm">
-            <span className="text-ink-faint">from </span>
-            <span className="font-semibold">{formatPaise(ev.min_price_paise)}</span>
+            {ev.max_price_paise === 0 ? (
+              <span className="font-semibold text-pine-700">Free</span>
+            ) : ev.min_price_paise === 0 ? (
+              <span className="font-semibold">Free – {formatPaise(ev.max_price_paise)}</span>
+            ) : (
+              <>
+                <span className="text-ink-faint">from </span>
+                <span className="font-semibold">{formatPaise(ev.min_price_paise)}</span>
+              </>
+            )}
+            {ev.max_discount_percent > 0 && <span className="ml-2 text-xs font-medium text-pine-700">up to {ev.max_discount_percent}% off</span>}
           </span>
           <AvailabilityBadge available={ev.available_tickets} total={ev.total_tickets} />
         </div>

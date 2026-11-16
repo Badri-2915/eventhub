@@ -1,6 +1,6 @@
 import { ticketQrUrl } from '../api/endpoints'
 import { categoryLabel, formatLongDate, formatTime } from './format'
-import { formatPaise } from './money'
+import { formatPrice } from './money'
 import type { Booking } from './types'
 
 // Ticket drawn on a canvas and saved as a PNG: easy to keep in a phone's
@@ -103,11 +103,11 @@ export async function downloadTicket(b: Booking, holderName: string) {
 
   y += 30
   label(ctx, 'Name', PAD, y)
-  label(ctx, 'Paid', W / 2 + 40, y)
+  label(ctx, b.total_paise === 0 ? 'Price' : 'Paid', W / 2 + 40, y)
   ctx.fillStyle = C.ink
   ctx.font = '500 34px Inter, sans-serif'
   ctx.fillText(holderName, PAD, y + 50)
-  ctx.fillText(formatPaise(b.total_paise), W / 2 + 40, y + 50)
+  ctx.fillText(formatPrice(b.total_paise), W / 2 + 40, y + 50)
 
   // perforation
   y += 110

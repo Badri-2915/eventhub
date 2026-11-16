@@ -413,15 +413,17 @@ type Seat struct {
 }
 
 type TicketCategory struct {
-	ID         uuid.UUID `json:"id"`
-	EventID    uuid.UUID `json:"event_id"`
-	Name       string    `json:"name"`
-	Color      string    `json:"color"`
-	SortOrder  int32     `json:"sort_order"`
-	PricePaise int32     `json:"price_paise"`
-	Capacity   *int32    `json:"capacity"`
-	Sold       int32     `json:"sold"`
-	Held       int32     `json:"held"`
+	ID              uuid.UUID `json:"id"`
+	EventID         uuid.UUID `json:"event_id"`
+	Name            string    `json:"name"`
+	Color           string    `json:"color"`
+	SortOrder       int32     `json:"sort_order"`
+	PricePaise      int32     `json:"price_paise"`
+	Capacity        *int32    `json:"capacity"`
+	Sold            int32     `json:"sold"`
+	Held            int32     `json:"held"`
+	ListPricePaise  int32     `json:"list_price_paise"`
+	DiscountPercent int32     `json:"discount_percent"`
 }
 
 type User struct {

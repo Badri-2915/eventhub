@@ -38,7 +38,7 @@ How each role uses it (attendee, host, door check-in, cancelling, admin, payment
 |---|---|
 | **Everyone** | Browse and search events by city and genre, view the live seat map |
 | **Attendee** (anyone signed in) | Pick exact seats (or a quantity for general admission), 5-minute hold with a countdown, pay (simulated), get a **QR ticket on screen** and **download it as an image**, get directions, cancel for a full refund before the host's cutoff |
-| **Host** (one click: *Host an event → Become a host*) | 5-step event wizard (details, Google Maps link, automatic genre cover image, seating, tickets), grid **layout designer** (tiers, aisles, blocked seats), publish, live sales dashboard with chart, attendee list + CSV export, **QR check-in at the door**, delete drafts, cancel an event with automatic refunds |
+| **Host** (one click: *Host an event → Become a host*) | 5-step event wizard (details, Google Maps link, automatic genre cover image, seating, tickets with price or **free entry** and an optional **discount %**), grid **layout designer** (tiers, aisles, blocked seats), publish, **edit a live event any time** (details, prices, discounts, ticket counts), live sales dashboard with chart, attendee list + CSV export, **QR check-in at the door**, delete drafts, cancel an event with automatic refunds |
 | **Admin** (emails in `ADMIN_EMAILS`) | Platform totals (users, hosts, events, bookings, revenue), every event with its host, cancel any event with refunds |
 
 ## What is real and what is simulated
@@ -121,6 +121,7 @@ sequenceDiagram
 | One user starting many checkouts | One pending booking per user per event (partial unique index); a new hold replaces the old one | Replace-hold test |
 | Seat maps going stale | SSE over Redis pub/sub patches the page's cache; 20 s polling fallback | Checked in the browser |
 | Bots spamming holds | Per-user rate limit in Redis (20 holds/min) | |
+| Host changes prices while people are checking out | The edit locks the event row; every booking item stores the price it was held at, so new prices apply to new holds only. A ticket count below sold + held is rejected by the same `CHECK` constraint | Live-edit tests |
 | Host cancels while people are checking out | Holds take a shared lock on the event and cancel takes an exclusive one, so cancel waits, then refunds everyone in one transaction | Cancel test |
 | Fake or reused tickets at the door | Random ticket codes; check-in is `UPDATE … WHERE checked_in_at IS NULL`, so only the first scan wins, even with two phones at once | Check-in tests |
 | Secrets leaking | Session in an httpOnly, Secure, SameSite=Lax cookie; malformed database / Redis URLs are rejected without echoing passwords to logs; `.env` files are git-ignored | |
@@ -168,7 +169,7 @@ These are **estimates** from measurements plus the free-plan limits above. Real 
 | 50 concurrent visitors browsing the **live** free deployment (k6) | **~64 req/s, 0 % errors, p95 117 ms** |
 | End-to-end API script (every workflow: host, attendee, cancel, check-in, admin) | 33 / 33 checks pass |
 
-- **18 Go tests** run with `-race` in GitHub Actions on every push. They cover races, overlap, oversell, expiry, idempotency, ownership, cancel, refunds, check-in and the layout parser.
+- **22 Go tests** run with `-race` in GitHub Actions on every push. They cover races, overlap, oversell, expiry, idempotency, ownership, cancel, refunds, check-in, live price edits, free tickets, discount maths and the layout parser.
 - Details: [loadtest/RESULTS.md](loadtest/RESULTS.md).
 
 ## Run it locally

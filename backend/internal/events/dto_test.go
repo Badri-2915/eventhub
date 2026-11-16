@@ -16,3 +16,20 @@ func TestValidateMapURL(t *testing.T) {
 		}
 	}
 }
+
+func TestDiscountedRoundsToRupees(t *testing.T) {
+	cases := []struct{ list, pct, want int32 }{
+		{50000, 0, 50000},  // no discount: exact
+		{49950, 0, 49950},  // keeps paise when not discounted
+		{50000, 20, 40000}, // ₹500 − 20% = ₹400
+		{49900, 20, 39900}, // ₹399.20 → ₹399
+		{99900, 15, 84900}, // ₹849.15 → ₹849
+		{100, 90, 0},       // ₹1 − 90% = ₹0.10 → ₹0
+		{0, 0, 0},          // free
+	}
+	for _, c := range cases {
+		if got := discounted(c.list, c.pct); got != c.want {
+			t.Errorf("discounted(%d, %d) = %d, want %d", c.list, c.pct, got, c.want)
+		}
+	}
+}

@@ -32,8 +32,26 @@ SELECT * FROM ticket_categories WHERE event_id = $1 ORDER BY sort_order, name;
 DELETE FROM ticket_categories WHERE event_id = $1;
 
 -- name: InsertCategory :one
-INSERT INTO ticket_categories (id, event_id, name, color, sort_order, price_paise, capacity)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO ticket_categories (id, event_id, name, color, sort_order, price_paise, capacity, list_price_paise, discount_percent)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+RETURNING *;
+
+-- name: UpdateLiveEvent :one
+-- Published events: everything except seating mode and layout can change.
+UPDATE events SET
+    title = $3, description = $4, category = $5, poster_url = $6,
+    venue_name = $7, city = $8, address = $9, starts_at = $10, ends_at = $11,
+    max_per_booking = $12, cancel_cutoff_hours = $13, map_url = $14
+WHERE id = $1 AND host_id = $2 AND status = 'PUBLISHED'
+RETURNING *;
+
+-- name: UpdateLiveCategory :one
+-- New prices apply to new holds only: booking_items keep the price paid. A GA
+-- capacity below sold + held fails the table's CHECK constraint.
+UPDATE ticket_categories SET
+    name = $3, color = $4, price_paise = $5, list_price_paise = $6, discount_percent = $7,
+    capacity = CASE WHEN capacity IS NULL THEN NULL ELSE sqlc.narg(capacity)::int END
+WHERE id = $1 AND event_id = $2
 RETURNING *;
 
 -- name: LockEventForHost :one
@@ -50,6 +68,7 @@ VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 SELECT e.id, e.title, e.category, e.poster_url, e.venue_name, e.city, e.starts_at, e.seating_mode,
     COALESCE((SELECT min(price_paise) FROM ticket_categories WHERE event_id = e.id), 0)::int AS min_price_paise,
     COALESCE((SELECT max(price_paise) FROM ticket_categories WHERE event_id = e.id), 0)::int AS max_price_paise,
+    COALESCE((SELECT max(discount_percent) FROM ticket_categories WHERE event_id = e.id), 0)::int AS max_discount_percent,
     (CASE WHEN e.seating_mode = 'GA'
         THEN COALESCE((SELECT sum(capacity) FROM ticket_categories WHERE event_id = e.id), 0)
         ELSE (SELECT count(*) FROM seats WHERE event_id = e.id AND status <> 'BLOCKED')

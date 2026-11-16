@@ -6,7 +6,7 @@ import { Badge, ErrorNote, PageLoader } from '../../components/ui/Feedback'
 import { Icon } from '../../components/ui/Icon'
 import { useMe } from '../../hooks/useMe'
 import { categoryLabel, directionsUrl, formatLongDate, formatTime, formatWhen } from '../../lib/format'
-import { formatPaise } from '../../lib/money'
+import { formatPrice } from '../../lib/money'
 import { downloadTicket } from '../../lib/ticketImage'
 
 export function BookingPage() {
@@ -110,8 +110,8 @@ export function BookingPage() {
             )}
           </div>
           <div className="text-center sm:text-right">
-            <p className="eyebrow">Paid</p>
-            <p className="mt-1 font-display text-2xl tabular-nums">{formatPaise(b.total_paise)}</p>
+            <p className="eyebrow">{b.total_paise === 0 ? 'Price' : 'Paid'}</p>
+            <p className="mt-1 font-display text-2xl tabular-nums">{formatPrice(b.total_paise)}</p>
           </div>
         </div>
       </div>
