@@ -8,8 +8,7 @@ No seat can ever be sold twice, and that is proven by concurrency tests and k6 l
 
 **Live demo:** https://eventhub-swart-xi.vercel.app (sign in with Google)
 
-**Stack:** Go 1.27 · Gin · pgx + sqlc · PostgreSQL 16 · Redis 7 · React 19 · Vite · TypeScript · Tailwind 4 · TanStack Query
-**Hosting:** Vercel · Render · Neon · Upstash, all on free plans (₹0 per month)
+**Built with:** Go, PostgreSQL, Redis, React and TypeScript. Hosted for ₹0 per month on Vercel, Render, Neon and Upstash ([full tech stack](#tech-stack)).
 
 How each role uses it (attendee, host, door check-in, cancelling, admin, payments): [docs/WORKFLOW.md](docs/WORKFLOW.md)
 
@@ -19,16 +18,17 @@ How each role uses it (attendee, host, door check-in, cancelling, admin, payment
 
 1. [Features](#features)
 2. [What is real and what is simulated](#what-is-real-and-what-is-simulated)
-3. [Architecture](#architecture)
-4. [Hard problems and how they are solved](#hard-problems-and-how-they-are-solved)
-5. [Tools in use today (all free)](#tools-in-use-today-all-free)
-6. [How many users the free setup supports](#how-many-users-the-free-setup-supports)
-7. [Tests and load test results](#tests-and-load-test-results)
-8. [Run it locally](#run-it-locally)
-9. [Configuration](#configuration)
-10. [Project layout](#project-layout)
-11. [Deploy](#deploy)
-12. [Future work and planned tools](#future-work-and-planned-tools)
+3. [Tech stack](#tech-stack)
+4. [Architecture](#architecture)
+5. [Hard problems and how they are solved](#hard-problems-and-how-they-are-solved)
+6. [Tools in use today (all free)](#tools-in-use-today-all-free)
+7. [How many users the free setup supports](#how-many-users-the-free-setup-supports)
+8. [Tests and load test results](#tests-and-load-test-results)
+9. [Run it locally](#run-it-locally)
+10. [Configuration](#configuration)
+11. [Project layout](#project-layout)
+12. [Deploy](#deploy)
+13. [Future work and planned tools](#future-work-and-planned-tools)
 
 ---
 
@@ -47,15 +47,38 @@ The project is honest about its scope. Everything in the "Real" column runs in p
 
 | Area | Status | Notes |
 |---|---|---|
-| Sign-in | ✅ Real | Google Sign-In, verified on the server |
-| Seat holds, booking, cancel, refunds in the database | ✅ Real | Correct under concurrency, see below |
-| Live seat updates | ✅ Real | Server-Sent Events over Redis pub/sub |
-| QR tickets + door check-in | ✅ Real | Scan with any phone camera; each ticket checks in once |
-| Host dashboard, CSV export, admin page | ✅ Real | |
-| **Payments** | ⚠️ **Simulated** | Checkout has a fake gateway ("Pay" / "Simulate failed payment"). **No money moves.** Real gateways (Razorpay, Stripe India) need a registered business and KYC. The flow around it is built for a real gateway (hold-then-pay, idempotency keys, payments table, refunds). Plan: [WORKFLOW.md § 6](docs/WORKFLOW.md#6-payments-simulated-on-purpose) |
-| **Emails** | ⏸ **Not sent** | **No emails go out today.** Tickets live on the website and are downloaded. Ticket, host-alert and cancellation emails are already written and tested but switched off; setting `BREVO_API_KEY` turns them on |
-| Poster upload | ⏸ Hidden | Events use genre cover images. The upload API exists (Cloudinary), the UI is hidden |
+| Sign-in | Real | Google Sign-In, verified on the server |
+| Seat holds, booking, cancel, refunds in the database | Real | Correct under concurrency, see below |
+| Live seat updates | Real | Server-Sent Events over Redis pub/sub |
+| QR tickets + door check-in | Real | Scan with any phone camera; each ticket checks in once |
+| Host dashboard, CSV export, admin page | Real | |
+| **Payments** | **Simulated** | Checkout has a fake gateway ("Pay" / "Simulate failed payment"). **No money moves.** Real gateways (Razorpay, Stripe India) need a registered business and KYC. The flow around it is built for a real gateway (hold-then-pay, idempotency keys, payments table, refunds). Plan: [WORKFLOW.md § 6](docs/WORKFLOW.md#6-payments-simulated-on-purpose) |
+| **Emails** | **Not sent** | **No emails go out today.** Tickets live on the website and are downloaded. Ticket, host-alert and cancellation emails are already written and tested but switched off; setting `BREVO_API_KEY` turns them on |
+| Poster upload | Hidden | Events use genre cover images. The upload API exists (Cloudinary), the UI is hidden |
 | Monitoring | Basic | Request logs in Render, uptime checks with UptimeRobot. No metrics dashboards or error tracking yet |
+
+## Tech stack
+
+| Layer | Technology | Why it was chosen |
+|---|---|---|
+| **Language (API)** | Go 1.27 | Fast, simple concurrency (goroutines) for many simultaneous bookings and live streams; one small binary |
+| **Web framework** | Gin | Lightweight HTTP routing and middleware (auth, rate limit, recovery, logging) |
+| **Database** | PostgreSQL 16 | Transactions, row locks (`FOR UPDATE`, `SKIP LOCKED`), `CHECK` constraints and partial unique indexes do the heavy lifting for correctness |
+| **DB driver + queries** | pgx v5 + sqlc | Plain SQL compiled into type-safe Go code; no ORM magic in the hot path |
+| **Migrations** | golang-migrate (embedded) | Versioned SQL files applied automatically on startup |
+| **Cache / messaging** | Redis 7 | Pub/sub to fan out seat changes to every open page, plus per-user rate limiting |
+| **Live updates** | Server-Sent Events (SSE) | One-way server → browser stream; simpler than WebSockets for "this seat changed" |
+| **Auth** | Google Identity Services + JWT (HS256) | Google verifies who the user is; our signed token lives in an httpOnly cookie |
+| **QR codes** | skip2/go-qrcode | Ticket QR images generated on the server |
+| **Frontend** | React 19 + TypeScript + Vite | Typed components and a fast build |
+| **Styling** | Tailwind CSS 4 | Design tokens for a calm, consistent look; Fraunces + Inter fonts |
+| **Data fetching** | TanStack Query | Caching, background refresh, and live patches from the SSE stream |
+| **Routing** | React Router | Public, attendee, host and admin pages |
+| **Testing** | Go `testing` with `-race`, k6 | Concurrency and integration tests against real Postgres; load tests |
+| **CI** | GitHub Actions | gofmt, vet, race tests and the frontend build on every push |
+| **Containers** | Docker (distroless image), Docker Compose | Small production image; Postgres + Redis locally |
+| **Hosting** | Vercel, Render, Neon, Upstash | All free plans; see [Tools in use today](#tools-in-use-today-all-free) |
+| **Monitoring** | UptimeRobot, Render logs | Uptime checks every 5 minutes and request logs |
 
 ## Architecture
 
