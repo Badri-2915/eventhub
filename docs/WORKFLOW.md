@@ -50,15 +50,20 @@ Ticket page: QR code + details  →  "Download ticket" saves one image (all deta
 
 ```
 Guest shows QR  →  host scans it with the normal phone camera
-                →  opens  <site>/check-in/EH-XXXXXXXX  (host must be signed in)
-                →  ✅ "Welcome in! Asha Rao · A5, A6"      first scan
-                   ⚠️ "Already checked in at 7:02 pm"     same ticket again
-                   ❌ "Not valid"                          fake, cancelled, or another host's event
+                →  opens  <site>/check-in/EH-XXXXXXXX
+                →  host signed in:   "Welcome in! Asha Rao · A5, A6"       first scan
+                                     "Already checked in at 7:02 pm"       same ticket again
+                                     "Not a ticket for your events"        fake code or another host's event
+                                     "Ticket cancelled"                    refunded / event cancelled
+                                     "Event is over"                       after the event has ended
+                →  anyone else:      "This is an EventHub ticket, show it at the door"
 ```
 
-No scanner app needed. Staff can also type the code. Only the event's host can check
-its tickets in, and each ticket checks in exactly once (even if two phones scan at
-the same instant). The host dashboard shows who has arrived.
+- No scanner app needed. Staff can also type the code.
+- Only the event's host can check its tickets in, and each ticket checks in exactly once, even if two phones scan at the same instant.
+- **Undo check-in** fixes a mistaken scan, and the ticket can then be scanned again.
+- A **"Guests arrived 42 / 120"** counter is shown after every scan. The host dashboard lists who has arrived and when.
+- Scanning more than 12 hours before the start still works but shows a warning. Check-in closes 6 hours after the event ends (or 12 hours after the start if no end time is set).
 
 ## 4. Cancelling
 

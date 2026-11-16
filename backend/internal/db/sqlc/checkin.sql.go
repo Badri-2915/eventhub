@@ -13,8 +13,30 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const checkInCounts = `-- name: CheckInCounts :one
+SELECT COALESCE(sum(bi.quantity) FILTER (WHERE b.checked_in_at IS NOT NULL), 0)::int AS arrived,
+       COALESCE(sum(bi.quantity), 0)::int AS expected
+FROM bookings b
+JOIN booking_items bi ON bi.booking_id = b.id
+WHERE b.event_id = $1 AND b.status = 'CONFIRMED'
+`
+
+type CheckInCountsRow struct {
+	Arrived  int32 `json:"arrived"`
+	Expected int32 `json:"expected"`
+}
+
+// Guests (tickets, not bookings) who have arrived vs. all confirmed tickets.
+func (q *Queries) CheckInCounts(ctx context.Context, eventID uuid.UUID) (CheckInCountsRow, error) {
+	row := q.db.QueryRow(ctx, checkInCounts, eventID)
+	var i CheckInCountsRow
+	err := row.Scan(&i.Arrived, &i.Expected)
+	return i, err
+}
+
 const getTicketByCode = `-- name: GetTicketByCode :one
 SELECT b.id, b.status, b.checked_in_at, b.event_id, e.host_id, e.title AS event_title,
+    e.starts_at, e.ends_at,
     u.name AS attendee_name, u.email AS attendee_email,
     (SELECT COALESCE(sum(quantity), 0) FROM booking_items WHERE booking_id = b.id)::int AS tickets,
     (SELECT string_agg(CASE WHEN s.label IS NOT NULL THEN s.label ELSE bi.quantity || ' × ' || tc.name END, ', '
@@ -36,6 +58,8 @@ type GetTicketByCodeRow struct {
 	EventID       uuid.UUID     `json:"event_id"`
 	HostID        uuid.UUID     `json:"host_id"`
 	EventTitle    string        `json:"event_title"`
+	StartsAt      *time.Time    `json:"starts_at"`
+	EndsAt        *time.Time    `json:"ends_at"`
 	AttendeeName  string        `json:"attendee_name"`
 	AttendeeEmail string        `json:"attendee_email"`
 	Tickets       int32         `json:"tickets"`
@@ -52,6 +76,8 @@ func (q *Queries) GetTicketByCode(ctx context.Context, ticketCode pgtype.Text) (
 		&i.EventID,
 		&i.HostID,
 		&i.EventTitle,
+		&i.StartsAt,
+		&i.EndsAt,
 		&i.AttendeeName,
 		&i.AttendeeEmail,
 		&i.Tickets,
@@ -72,4 +98,18 @@ func (q *Queries) MarkCheckedIn(ctx context.Context, id uuid.UUID) (*time.Time, 
 	var checked_in_at *time.Time
 	err := row.Scan(&checked_in_at)
 	return checked_in_at, err
+}
+
+const undoCheckIn = `-- name: UndoCheckIn :one
+UPDATE bookings SET checked_in_at = NULL
+WHERE id = $1 AND status = 'CONFIRMED' AND checked_in_at IS NOT NULL
+RETURNING id
+`
+
+// For a mistaken scan at the door; the ticket can then be scanned again.
+func (q *Queries) UndoCheckIn(ctx context.Context, id uuid.UUID) (uuid.UUID, error) {
+	row := q.db.QueryRow(ctx, undoCheckIn, id)
+	var id_2 uuid.UUID
+	err := row.Scan(&id_2)
+	return id_2, err
 }

@@ -65,6 +65,7 @@ export const hostApi = {
   stats: (id: string) => api<EventStats>(`/host/events/${id}/stats`),
   attendees: (id: string) => api<{ attendees: Attendee[] }>(`/host/events/${id}/attendees`).then((r) => r.attendees),
   checkIn: (code: string) => api<CheckInResult>(`/host/check-in/${encodeURIComponent(code)}`, { method: 'POST' }),
+  undoCheckIn: (code: string) => api<CheckInResult>(`/host/check-in/${encodeURIComponent(code)}`, { method: 'DELETE' }),
   attendeesCsvUrl: (id: string) => `${import.meta.env.VITE_API_BASE ?? '/api'}/host/events/${id}/attendees.csv`,
 }
 

@@ -35,8 +35,9 @@ export default function App() {
           <Route path="host/events/:id" element={<HostEventPage />} />
           <Route path="host/events/:id/edit" element={<EventWizard />} />
           <Route path="host/check-in" element={<CheckInPage />} />
-          <Route path="check-in/:code" element={<CheckInPage />} />
         </Route>
+        {/* Public: anyone can scan a ticket's QR; the page explains that only the host checks it in. */}
+        <Route path="check-in/:code" element={<CheckInPage />} />
 
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

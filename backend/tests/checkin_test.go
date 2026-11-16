@@ -145,3 +145,39 @@ func TestEmailsOnConfirmAndCancel(t *testing.T) {
 		t.Fatalf("want a cancellation email and no duplicates, got %d emails", len(msgs))
 	}
 }
+
+// The door counter, the early flag, undo after a mistaken scan, and the door
+// closing once the event is over.
+func TestCheckInUndoCountsAndClosing(t *testing.T) {
+	ctx := context.Background()
+	svc := tickets.NewService(store, "http://localhost:5173")
+	host, ticket := confirmedTicket(t) // 2 tickets, event starts in 72h
+
+	r, err := svc.CheckIn(ctx, host, ticket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Result != "CHECKED_IN" || !r.Early || r.Arrived != 2 || r.Expected != 2 {
+		t.Fatalf("want early check-in with 2/2 arrived, got %+v", r)
+	}
+
+	u, err := svc.UndoCheckIn(ctx, host, ticket)
+	if err != nil || u.Result != "UNDONE" || u.Arrived != 0 {
+		t.Fatalf("undo: want UNDONE with 0 arrived, got %+v %v", u, err)
+	}
+	if _, err := svc.UndoCheckIn(ctx, host, ticket); code(err) != "NOT_CHECKED_IN" {
+		t.Fatalf("second undo must fail, got %v", err)
+	}
+	if _, err := svc.UndoCheckIn(ctx, newHost(t), ticket); code(err) != "TICKET_NOT_FOUND" {
+		t.Fatalf("another host must not undo, got %v", err)
+	}
+
+	svc.Now = func() time.Time { return time.Now().Add(72 * time.Hour) } // the event's start
+	if r, err := svc.CheckIn(ctx, host, ticket); err != nil || r.Result != "CHECKED_IN" || r.Early {
+		t.Fatalf("on the day: want a normal check-in, got %+v %v", r, err)
+	}
+	svc.Now = func() time.Time { return time.Now().Add(72*time.Hour + 13*time.Hour) } // no end time: closes 12h after start
+	if _, err := svc.CheckIn(ctx, host, ticket); code(err) != "CHECK_IN_CLOSED" {
+		t.Fatalf("after the event: want CHECK_IN_CLOSED, got %v", err)
+	}
+}

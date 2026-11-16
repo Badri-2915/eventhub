@@ -241,7 +241,7 @@ export type Attendee = {
 }
 
 export type CheckInResult = {
-  result: 'CHECKED_IN' | 'ALREADY_CHECKED_IN'
+  result: 'CHECKED_IN' | 'ALREADY_CHECKED_IN' | 'UNDONE'
   booking_id: string
   event_id: string
   event_title: string
@@ -250,6 +250,12 @@ export type CheckInResult = {
   tickets: number
   items: string
   checked_in_at: string | null
+  starts_at: string | null
+  /** Scanned more than 12 hours before the event starts. */
+  early: boolean
+  /** Guests checked in so far / all confirmed tickets, for the door counter. */
+  arrived: number
+  expected: number
 }
 
 // ---- admin -----------------------------------------------------------------

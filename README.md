@@ -33,16 +33,17 @@ It is built with **Go, PostgreSQL, Redis and React**, and it runs live on free h
 2. [What each person can do](#what-each-person-can-do)
 3. [Being honest: what is real and what is not](#being-honest-what-is-real-and-what-is-not)
 4. [The hard part: making sure no seat is sold twice](#the-hard-part-making-sure-no-seat-is-sold-twice)
-5. [How it is built](#how-it-is-built)
-6. [Tech stack](#tech-stack)
-7. [Free tools it runs on](#free-tools-it-runs-on)
-8. [How many people can it handle for free?](#how-many-people-can-it-handle-for-free)
-9. [Proof: tests and load tests](#proof-tests-and-load-tests)
-10. [Run it on your laptop](#run-it-on-your-laptop)
-11. [Settings](#settings)
-12. [Folder structure](#folder-structure)
-13. [What I would build next](#what-i-would-build-next)
-14. [The short version](#the-short-version)
+5. [QR tickets at the door: how it works](#qr-tickets-at-the-door-how-it-works)
+6. [How it is built](#how-it-is-built)
+7. [Tech stack](#tech-stack)
+8. [Free tools it runs on](#free-tools-it-runs-on)
+9. [How many people can it handle for free?](#how-many-people-can-it-handle-for-free)
+10. [Proof: tests and load tests](#proof-tests-and-load-tests)
+11. [Run it on your laptop](#run-it-on-your-laptop)
+12. [Settings](#settings)
+13. [Folder structure](#folder-structure)
+14. [What I would build next](#what-i-would-build-next)
+15. [The short version](#the-short-version)
 
 ---
 
@@ -56,7 +57,7 @@ It is built with **Go, PostgreSQL, Redis and React**, and it runs live on free h
 4. Click **Pay**. This is a demo payment, so **no real money is taken**.
 5. You get a ticket with a **QR code**. Click **Download ticket** to save it as an image.
 6. Want to host? Click **Host an event → Become a host**. Create an event in 5 simple steps and publish it.
-7. At the door, the host scans the guest's QR code with a normal phone camera. The page shows **"Welcome in!"** the first time and **"Already checked in"** if someone tries the same ticket again.
+7. At the door, the host scans the guest's QR code with a normal phone camera. The page shows **"Welcome in!"** the first time and **"Already checked in"** if someone tries the same ticket again. (Details in [QR tickets at the door](#qr-tickets-at-the-door-how-it-works).)
 
 ---
 
@@ -90,6 +91,7 @@ I prefer being clear about this upfront.
 | **Payments** | **Simulated** | **No real money moves.** The checkout has a demo "Pay" button (and a "Simulate failed payment" button to test failures). Real payment gateways like Razorpay need a registered business and KYC. Everything around payment is still built the real way: seats are held before paying, a payment can never be charged twice, and refunds are recorded. Adding Razorpay later is a small, well-defined change ([plan here](docs/WORKFLOW.md#6-payments-simulated-on-purpose)) |
 | **Emails** | **Not sent** | **No emails go out right now.** Tickets live on the website and can be downloaded. The email code (ticket with QR, alert to the host, cancellation notice) is already written and tested. It is just switched off, and one setting turns it on |
 | Poster upload | Hidden | Events use nice cover pictures based on their type. Upload exists in the backend, but the button is hidden for now |
+| Door check-in | Real | Host-only, once per ticket, with undo, a live arrival counter, and closing after the event. No separate staff logins yet |
 | Monitoring | Basic | Uptime checks every 5 minutes plus server logs. No dashboards or error tracking yet |
 
 ---
@@ -131,11 +133,57 @@ The ticket count also cannot be reduced below what is already sold.
 **8. Fake tickets, or the same ticket scanned twice at the door.**
 Ticket codes are random. Check-in is again a single "only if not already checked in"
 instruction, so even two phones scanning together give exactly one "Welcome in!".
+The full door process is explained in the next section.
 
 **9. Bots spamming holds.** Each user can make only 20 holds per minute.
 
 **10. Keeping secrets safe.** The login session lives in a secure cookie that page scripts
 cannot read. Passwords never get printed in logs, and no secret is stored in the code.
+
+---
+
+## QR tickets at the door: how it works
+
+**What is inside the QR code?**
+Just a web link: `https://<site>/check-in/EH-7KQ2M9XA`. The part at the end is the
+**ticket code**. It is 8 random letters and digits, made with a secure random generator,
+so there are about 2.8 lakh crore (2.8 trillion) possible codes. Nobody can guess a valid one.
+The QR holds no name, price or personal data. Everything is checked on the server.
+
+**The process, step by step:**
+
+1. **Booking.** When payment succeeds, the booking gets its ticket code, and the ticket page shows the QR. The guest can also download the ticket as an image, which works offline at the venue.
+2. **At the door, scan.** The host opens the normal phone camera (no special app) and points it at the guest's QR. The phone opens the check-in link.
+3. **The server checks the ticket, in this order:**
+   - Is the code in the right format, and does it exist?
+   - Does it belong to **this host's** event? If not, the answer is "Not a ticket for your events". A host cannot even find out whether another host's ticket exists.
+   - Is the booking still **confirmed**, or was it cancelled or refunded (including when the whole event was cancelled)?
+   - Is the event **already over**? If yes, check-in is closed.
+4. **Mark it used, exactly once.** The database runs one instruction: *"set checked-in time = now, only if it is still empty"*. The first scan wins.
+5. **Show the result** in big colours that are easy to read at a busy door:
+   - Green **"Welcome in!"** with the guest's name, number of tickets and seat numbers.
+   - Yellow **"Already checked in"** with the time of the first scan, so staff can check the person's name.
+   - Red **"Not a ticket for your events"**, **"Ticket cancelled"** or **"Event is over"**.
+6. **Count.** After every scan the page shows **"Guests arrived 42 / 120"**. The host dashboard has an "Entry" column with each guest's arrival time.
+
+**Real-world problems at the door, and how they are handled:**
+
+| Problem | What happens |
+|---|---|
+| Two staff phones scan the same ticket at the same second | The database lets only one of them set the check-in time. One phone shows "Welcome in!", the other shows "Already checked in". This is covered by a test that runs both at once |
+| Someone shares a screenshot of their QR with a friend | Whoever reaches the door first gets in. The second person sees "Already checked in at 7:02 pm" with the **original buyer's name**, so staff can ask for ID |
+| Fake or made-up code | It is not found: "Not a ticket for your events" |
+| A ticket from a different event or host | Treated exactly like a fake code. Hosts can never see each other's tickets |
+| The guest cancelled and got a refund, or the event was cancelled | The booking is no longer confirmed: "Ticket cancelled" |
+| Someone tries to use the ticket after the event | Check-in closes 6 hours after the end time (or 12 hours after the start if there is no end time): "Event is over" |
+| Staff scan a ticket by mistake (or days before the event) | Early scans show a clear warning, and every result has an **Undo check-in** button. The ticket can then be scanned again |
+| A guest scans their own QR, or the host's phone is signed out | The page explains that this is an EventHub ticket to show at the door. A signed-out host gets a "Sign in to check in" button that brings them straight back to the ticket |
+| Camera not working or QR damaged | Staff type the code (shown under the QR) into the box on the check-in page |
+| Weak internet at the guest's end | The downloaded ticket image works offline. Only the host's phone needs internet |
+
+**What it does not do yet (honest list):** there are no separate staff accounts (only the
+host's own login can check people in), and the door page needs internet. Staff logins and
+an offline mode are good next steps.
 
 ---
 
@@ -270,16 +318,17 @@ of buyers in the same second, you just move to paid plans. **No code changes are
 | Test | Result |
 |---|---|
 | 500 requests fight for the same seat (Go test) | Exactly **1** wins |
-| Two phones scan the same QR code together (Go test) | Exactly **1** check-in |
+| Two phones scan the same QR code together (Go test) | Exactly **1** check-in, the other sees "Already checked in" |
+| Undo, scan again, then scan after the event ends (Go test) | Undo works, re-scan works, after the event it is refused |
 | 200 users fight for one seat (k6 load test, on my laptop) | 1 wins, 199 are told "taken", **0 errors** |
 | 300 users try to buy 100 tickets (k6, on my laptop) | Exactly **100 sold**, never more |
 | 200 users keep booking for 60 seconds (k6, on my laptop) | **~350 bookings per second**, about 1,050 requests per second, **0% errors** |
 | 50 people browsing the **live** free website (k6) | About 64 requests per second, **0% errors**, 95% answered within 117 ms |
 | End-to-end check of every flow (host, attendee, cancel, check-in, admin) | **33 out of 33** checks pass |
 
-There are **22 Go tests**, run with Go's race detector on every push to GitHub. They cover
+There are **23 Go tests**, run with Go's race detector on every push to GitHub. They cover
 seat races, overlapping seats, overselling, hold expiry, double payment, someone else's
-booking, cancellations and refunds, check-in, live price edits, free tickets, discount
+booking, cancellations and refunds, check-in (only once, undo, door counter, closing after the event), live price edits, free tickets, discount
 maths and the seating layout. Full load test details are in [loadtest/RESULTS.md](loadtest/RESULTS.md).
 
 ---
@@ -364,6 +413,8 @@ render.yaml  Render setup     .github/workflows/ci.yml  automatic checks
 |---|---|---|
 | Real payments | Replace the demo payment with real money | Razorpay (test mode first) |
 | Emails | Send the ticket with QR to the buyer, alert the host, notify cancellations. Already written, just switched on with a key | Brevo (300 emails a day free) |
+| Door staff logins | Let the host add helpers who can scan tickets without the host's own account | Code change |
+| Offline door mode | Keep checking in for a short time if the venue's internet drops, then sync | Code change |
 | Error tracking | Get an alert with full details whenever something crashes | Sentry |
 | Dashboards | Graphs of traffic, speed, holds and bookings per minute | Prometheus + Grafana Cloud |
 | Browser tests | Automatically click through booking and check-in on every push | Playwright |
