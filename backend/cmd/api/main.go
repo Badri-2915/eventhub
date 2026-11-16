@@ -69,7 +69,10 @@ func run() error {
 	api := r.Group("/api")
 	// Liveness for uptime pings: touches neither Postgres nor Redis, so an
 	// always-on monitor doesn't keep the free-tier database awake.
-	api.GET("/ping", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
+	// HEAD too: UptimeRobot's free monitors send HEAD requests.
+	ping := func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) }
+	api.GET("/ping", ping)
+	api.HEAD("/ping", ping)
 	api.GET("/healthz", func(c *gin.Context) {
 		dbErr := store.Pool.Ping(c)
 		redisErr := rdb.Ping(c).Err()
