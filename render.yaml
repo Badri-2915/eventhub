@@ -8,7 +8,7 @@ services:
     region: singapore
     dockerContext: ./backend
     dockerfilePath: ./backend/Dockerfile
-    healthCheckPath: /api/healthz
+    healthCheckPath: /api/ping
     autoDeploy: true
     envVars:
       - key: APP_ENV

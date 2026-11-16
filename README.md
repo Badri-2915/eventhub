@@ -109,4 +109,17 @@ docs/       WORKFLOW.md (how it works), DEPLOY.md (free hosting), PLAN.md (origi
 ## Deploy for ₹0
 
 Render (API) + Neon (Postgres) + Upstash (Redis) + Vercel (website), all free tiers.
+UptimeRobot pings `/api/ping` every 5 minutes so the free API never sleeps
+(`/api/ping` and the idle-aware hold sweeper leave the database alone, so Neon can still sleep).
 Step-by-step guide: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
+
+## Future work
+
+| Next step | Why | Free option |
+|---|---|---|
+| Real payments | replace the simulated gateway (plan in [WORKFLOW.md § 6](docs/WORKFLOW.md#6-payments-simulated-on-purpose)) | Razorpay test mode |
+| Emails | ticket + QR, host alerts, cancellations (already built, off) | Brevo, 300/day |
+| Error tracking | crash reports with stack traces from API and website | Sentry developer plan |
+| Metrics + dashboards | request rate, latency, holds and bookings per minute | Prometheus `/metrics` + Grafana Cloud |
+| Browser end-to-end tests | click through booking and check-in on every push | Playwright in GitHub Actions |
+| Poster upload | host's own image instead of a genre cover (API exists, UI hidden) | Cloudinary |

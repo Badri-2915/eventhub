@@ -56,6 +56,7 @@ Create a Redis database (same region) → copy the **TLS** URL: `rediss://defaul
    `ADMIN_EMAILS` (your Google email, which makes you admin).
    `JWT_SECRET` is generated for you.
 3. Deploy, then open `https://<your-service>.onrender.com/api/healthz` → `{"db":"ok","redis":"ok"}`.
+   If the deploy fails, open the service → **Logs**: the last lines name the missing or wrong setting.
 
 ## 6. Vercel (website)
 
@@ -77,6 +78,13 @@ Create a Redis database (same region) → copy the **TLS** URL: `rediss://defaul
 
 Open the Vercel URL, sign in with Google, book a seat. Done.
 
+## Keep the API awake (UptimeRobot)
+
+uptimerobot.com → **New monitor → HTTP(s)** → URL `https://<your-service>.onrender.com/api/ping`
+→ interval **5 minutes**. You also get an email if the site goes down.
+Use `/api/ping`, not `/api/healthz`: ping doesn't touch the database, so Neon's free
+compute can still sleep while nobody is booking.
+
 ## Optional later: emails
 
 Emails (ticket with QR, host booking alerts, cancellation notices) are built but off.
@@ -86,7 +94,7 @@ create an API key → in Render add `BREVO_API_KEY` and `MAIL_FROM` = `EventHub 
 
 ## Free-tier notes
 
-- Render's free API **sleeps after ~15 min idle**; the first request then takes ~30–60 s. Open the site once before a demo or interview.
+- Render's free API **sleeps after ~15 min idle** unless UptimeRobot pings it (above); a cold start takes ~30–60 s.
 - If the live stream drops, the seat map falls back to refreshing every 20 s automatically.
 - The developer sign-in is disabled in production (`APP_ENV=production`).
 - To deploy updates, push to `main`: Render and Vercel redeploy automatically, and GitHub Actions runs the tests ([`.github/workflows/ci.yml`](../.github/workflows/ci.yml)).

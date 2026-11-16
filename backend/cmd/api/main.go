@@ -66,6 +66,9 @@ func run() error {
 	r.SetTrustedProxies(nil) //nolint:errcheck
 
 	api := r.Group("/api")
+	// Liveness for uptime pings: touches neither Postgres nor Redis, so an
+	// always-on monitor doesn't keep the free-tier database awake.
+	api.GET("/ping", func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"ok": true}) })
 	api.GET("/healthz", func(c *gin.Context) {
 		dbErr := store.Pool.Ping(c)
 		redisErr := rdb.Ping(c).Err()

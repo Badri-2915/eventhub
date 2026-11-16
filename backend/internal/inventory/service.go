@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +27,7 @@ type Service struct {
 	hub      *realtime.Hub
 	holdTTL  time.Duration
 	notifier Notifier
+	lastHold atomic.Int64 // unix nanos of the latest successful hold
 }
 
 // Notifier is told about state changes after they commit (emails etc.).
@@ -140,8 +142,18 @@ func (s *Service) Hold(ctx context.Context, userID uuid.UUID, req HoldRequest) (
 	if err != nil {
 		return HoldResult{}, mapPgError(err)
 	}
+	s.lastHold.Store(time.Now().UnixNano())
 	s.publish(ctx, pub...)
 	return res, nil
+}
+
+// HoldsMayBeLive reports whether a hold placed by this process could still be
+// unexpired, so the sweeper can skip the database while the site is idle
+// (lets a scale-to-zero database like Neon sleep). Holds from before a restart
+// are covered by the sweeper's first run and by lazy expiry.
+func (s *Service) HoldsMayBeLive() bool {
+	last := s.lastHold.Load()
+	return last != 0 && time.Since(time.Unix(0, last)) < s.holdTTL+time.Minute
 }
 
 func normalizeSelection(ev sqlc.Event, req HoldRequest) ([]uuid.UUID, []GAItem, int32, error) {
