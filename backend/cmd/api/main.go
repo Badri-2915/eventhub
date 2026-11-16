@@ -53,7 +53,8 @@ func run() error {
 
 	redisOpts, err := redis.ParseURL(cfg.RedisURL)
 	if err != nil {
-		return err
+		// The parse error echoes the URL, password included; keep it out of logs.
+		return errors.New("REDIS_URL must look like rediss://default:<password>@<host>:6379")
 	}
 	rdb := redis.NewClient(redisOpts)
 	defer rdb.Close()

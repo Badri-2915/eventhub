@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -71,6 +72,10 @@ func Load() (Config, error) {
 
 	if c.DatabaseURL == "" {
 		return Config{}, fmt.Errorf("DATABASE_URL is required")
+	}
+	// Checked here so later parse errors (which echo the URL and its password) can't reach the logs.
+	if u, err := url.Parse(c.DatabaseURL); err != nil || (u.Scheme != "postgres" && u.Scheme != "postgresql") || u.Host == "" {
+		return Config{}, fmt.Errorf("DATABASE_URL must look like postgresql://<user>:<password>@<host>/<db>?sslmode=require")
 	}
 	if len(c.JWTSecret) < 32 {
 		return Config{}, fmt.Errorf("JWT_SECRET must be at least 32 bytes")
