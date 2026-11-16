@@ -233,7 +233,7 @@ sequenceDiagram
     A->>R: Tell everyone these seats are taken
     R-->>B: Other people's seat maps turn grey
     B->>A: Pay (with a unique payment key)
-    A->>P: Record payment, seats become SOLD, create ticket
+    A->>P: Record payment, seats become BOOKED, create ticket
     A-->>B: Your ticket with QR code
 ```
 
