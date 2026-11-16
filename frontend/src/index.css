@@ -1,0 +1,78 @@
+@import "tailwindcss";
+
+/* Calm, warm-neutral palette: paper, ink, pine (primary), sand (holds), clay (errors). */
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Fraunces", Georgia, serif;
+
+  --color-paper: #f7f6f2;
+  --color-mist: #efede7;
+  --color-line: #e4e1d9;
+  --color-ink: #1f2421;
+  --color-ink-muted: #5c635e;
+  --color-ink-faint: #8b918c;
+
+  --color-pine-50: #eef5f1;
+  --color-pine-100: #d9e9e0;
+  --color-pine-200: #b3d3c2;
+  --color-pine-300: #84b59d;
+  --color-pine-500: #3b7d66;
+  --color-pine-600: #2e6a55;
+  --color-pine-700: #245544;
+  --color-pine-800: #1c4236;
+
+  --color-sand-50: #fbf6ea;
+  --color-sand-100: #f6ead0;
+  --color-sand-300: #e9cf95;
+  --color-sand-700: #8a6420;
+
+  --color-clay-50: #faeee9;
+  --color-clay-500: #b4533a;
+  --color-clay-700: #8c3f2b;
+
+  --shadow-soft: 0 1px 2px rgb(31 36 33 / 0.04), 0 4px 16px rgb(31 36 33 / 0.05);
+  --shadow-lift: 0 2px 4px rgb(31 36 33 / 0.05), 0 12px 32px rgb(31 36 33 / 0.08);
+}
+
+@layer base {
+  html {
+    @apply bg-paper font-sans text-ink antialiased;
+  }
+  h1, h2, h3 {
+    @apply text-ink;
+  }
+  ::selection {
+    @apply bg-pine-100;
+  }
+}
+
+/* Tailwind v4: @utility (not @layer components) so classes can @apply each other. */
+@utility font-display {
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  letter-spacing: -0.01em;
+}
+@utility input {
+  @apply w-full rounded-lg border border-line bg-white px-3 py-2.5 text-sm text-ink outline-none transition placeholder:text-ink-faint focus:border-pine-500 focus:ring-4 focus:ring-pine-100 disabled:bg-mist disabled:text-ink-muted;
+}
+@utility label {
+  @apply mb-1.5 block text-[13px] font-medium text-ink-muted;
+}
+@utility btn {
+  @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-pine-100 disabled:cursor-not-allowed disabled:opacity-50;
+}
+@utility btn-primary {
+  @apply btn bg-pine-700 text-white shadow-sm hover:bg-pine-800;
+}
+@utility btn-secondary {
+  @apply btn border border-line bg-white text-ink hover:border-ink-faint/50 hover:bg-mist/60;
+}
+@utility btn-quiet {
+  @apply btn px-3 text-ink-muted hover:bg-mist hover:text-ink;
+}
+@utility card {
+  @apply rounded-2xl border border-line bg-white shadow-soft;
+}
+@utility eyebrow {
+  @apply text-xs font-medium uppercase tracking-[0.12em] text-ink-faint;
+}

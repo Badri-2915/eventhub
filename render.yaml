@@ -1,0 +1,31 @@
+# Render Blueprint: New → Blueprint → pick this repo. Free plan.
+# Fill the `sync: false` values in the Render dashboard (never commit them).
+services:
+  - type: web
+    name: eventhub-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerContext: ./backend
+    dockerfilePath: ./backend/Dockerfile
+    healthCheckPath: /api/healthz
+    autoDeploy: true
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL # Neon *direct* connection string (not the -pooler host)
+        sync: false
+      - key: REDIS_URL # Upstash, starts with rediss://
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: FRONTEND_ORIGIN # e.g. https://eventhub-yourname.vercel.app
+        sync: false
+      - key: ADMIN_EMAILS # your Google email(s), comma-separated
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: HOLD_MINUTES
+        value: "5"
+      - key: HOLD_RATE_PER_MIN
+        value: "20"

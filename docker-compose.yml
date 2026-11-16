@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: eventhub
+      POSTGRES_PASSWORD: eventhub
+      POSTGRES_DB: eventhub
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventhub"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  # Optional (emails are a future extension): `docker compose --profile email up -d mailpit`
+  # gives a local inbox at http://localhost:8025; then set SMTP_HOST=localhost, SMTP_PORT=1025.
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["email"]
+    ports:
+      - "1025:1025" # SMTP
+      - "8025:8025" # web inbox
+
+  api:
+    build: ./backend
+    profiles: ["full"] # `docker compose --profile full up` to run the API in a container too
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgres://eventhub:eventhub@postgres:5432/eventhub?sslmode=disable
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
