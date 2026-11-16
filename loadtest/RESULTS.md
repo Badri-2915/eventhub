@@ -23,3 +23,20 @@ Reproduce:
 HOLD_RATE_PER_MIN=1000000 make api   # rate limiter off for load tests
 make loadtest
 ```
+
+## Live deployment (free tier)
+
+Run on 16 Nov 2026 from India against the deployed API (Render free, Singapore;
+Neon free; Upstash free) with [`live_read.js`](live_read.js): public browsing only
+(event list → event page → seat map), because production has no test login.
+
+| Load | Result |
+|---|---|
+| ramp to **50 concurrent visitors** over 40 s, 1 s think time | **2,632 requests (~64 req/s), 0 % failed**; p50 65 ms, p95 **117 ms**, max 217 ms (includes India → Singapore network) |
+
+The free instance was not saturated at this load; the test was kept small on purpose
+to stay well inside the free plans.
+
+```bash
+API_BASE=https://eventhub-api-num4.onrender.com/api k6 run loadtest/live_read.js
+```

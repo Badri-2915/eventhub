@@ -39,11 +39,14 @@ gh repo create eventhub --public --source=. --push     # or create the repo on g
 
 ## 3. Upstash (Redis)
 
-Create a Redis database (same region) → copy the **TLS** URL: `rediss://default:…@….upstash.io:6379`.
+Create a Redis database (same region) → copy **only the URL** (not the `redis-cli --tls -u …`
+command around it): `rediss://default:…@….upstash.io:6379`. A `redis://` URL also works;
+the API switches on TLS for Upstash hosts by itself.
 
 ## 4. Google sign-in
 
-1. console.cloud.google.com → create a project → **APIs & Services → OAuth consent screen** → External → fill the app name and your email → add yourself as a test user.
+1. console.cloud.google.com → create a project → **Google Auth Platform → Get started** → External → fill the app name and your email.
+   Then **Audience → Publish app** (basic sign-in needs no review); while in "Testing" only listed test users can sign in.
 2. **Credentials → Create credentials → OAuth client ID → Web application**.
 3. **Authorised JavaScript origins:** `http://localhost:5173` now; add your Vercel URL after step 6.
 4. Copy the **Client ID** (`….apps.googleusercontent.com`). No client secret is needed.
@@ -51,7 +54,7 @@ Create a Redis database (same region) → copy the **TLS** URL: `rediss://defaul
 ## 5. Render (API)
 
 1. **New → Blueprint** → choose the repo. It reads [`render.yaml`](../render.yaml).
-2. Fill the prompted values: `DATABASE_URL` (Neon), `REDIS_URL` (Upstash), `GOOGLE_CLIENT_ID`,
+2. Fill the prompted values (or later: service → **Environment → Add from .env** and paste them all at once): `DATABASE_URL` (Neon), `REDIS_URL` (Upstash), `GOOGLE_CLIENT_ID`,
    `FRONTEND_ORIGIN` (put `https://example.com` for now; fix it after step 6),
    `ADMIN_EMAILS` (your Google email, which makes you admin).
    `JWT_SECRET` is generated for you.
@@ -69,7 +72,8 @@ Create a Redis database (same region) → copy the **TLS** URL: `rediss://defaul
 
 ## 7. Connect the pieces
 
-1. Render → environment → set `FRONTEND_ORIGIN` to the Vercel URL → it redeploys.
+1. Render → environment → set `FRONTEND_ORIGIN` to the Vercel URL, with no trailing `/` → it redeploys.
+   **Don't skip this:** it is the origin allowed to open the live seat stream, and the link inside every ticket's QR code.
 2. Google Console → OAuth client → add the Vercel URL to **Authorised JavaScript origins**.
 3. Seed the demo events into Neon from your laptop:
    ```bash
