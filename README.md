@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎟️ EventHub
+# 🎫 EventHub
 
 **A live event ticketing platform where the same seat can never be sold to two people.**
 
@@ -78,7 +78,7 @@ QR tickets, and hosts scan them at the door.
 
 ---
 
-## 🕹️ Try it in 2 minutes
+## 🎮 Try it in 2 minutes
 
 1. Open **https://eventhub-swart-xi.vercel.app** and sign in with Google.
    *The first visit may take a few seconds while the free server wakes up.*
@@ -116,7 +116,7 @@ live sales chart · attendee list with CSV export ·
 QR door check-in with undo and a live arrival counter ·
 delete drafts · cancel an event (everyone is refunded automatically).
 </td></tr>
-<tr><td>🛡️ <b>Admin</b></td><td>Platform totals (users, hosts, events, bookings, revenue), every event with its host, and cancel any event with refunds.</td></tr>
+<tr><td>👮 <b>Admin</b></td><td>Platform totals (users, hosts, events, bookings, revenue), every event with its host, and cancel any event with refunds.</td></tr>
 </table>
 
 Every screen and flow is walked through in **[docs/WORKFLOW.md](docs/WORKFLOW.md)**.
@@ -141,7 +141,7 @@ I prefer to be upfront about this.
 
 ---
 
-## 🏗️ Architecture
+## 🧱 Architecture
 
 ```mermaid
 flowchart LR
@@ -304,7 +304,7 @@ arrival-time column.
 
 ---
 
-## 🗄️ Data model
+## 💾 Data model
 
 ```mermaid
 erDiagram
@@ -409,7 +409,7 @@ All routes live under `/api`. Errors always have the same shape:
 
 ---
 
-## 🛠️ Tech stack
+## 🧰 Tech stack
 
 | Layer | Choice | Why |
 |---|---|---|
@@ -514,7 +514,7 @@ locally, never in production. Sign in as `admin@eventhub.dev` to see the admin p
 
 ---
 
-## ⚙️ Configuration
+## 🔧 Configuration
 
 | Variable | Local | Production | Notes |
 |---|---|---|---|
@@ -535,7 +535,7 @@ Secrets live only in the Render and Vercel dashboards and in git-ignored local f
 
 ---
 
-## ☁️ Deployment (₹0/month)
+## 📦 Deployment (₹0/month)
 
 | Job | Service (free plan) | Main limits |
 |---|---|---|
@@ -608,7 +608,7 @@ eventhub/
 
 ---
 
-## 🗺️ Roadmap
+## 🧭 Roadmap
 
 | Next step | Why | Tool |
 |---|---|---|
