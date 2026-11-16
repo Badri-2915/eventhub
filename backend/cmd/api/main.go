@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -55,6 +57,10 @@ func run() error {
 	if err != nil {
 		// The parse error echoes the URL, password included; keep it out of logs.
 		return errors.New("REDIS_URL must look like rediss://default:<password>@<host>:6379")
+	}
+	// Upstash only accepts TLS; a pasted redis:// URL would fail with a bare "EOF".
+	if redisOpts.TLSConfig == nil && strings.HasSuffix(strings.Split(redisOpts.Addr, ":")[0], ".upstash.io") {
+		redisOpts.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12, ServerName: strings.Split(redisOpts.Addr, ":")[0]}
 	}
 	rdb := redis.NewClient(redisOpts)
 	defer rdb.Close()
