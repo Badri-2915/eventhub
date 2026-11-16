@@ -1,6 +1,6 @@
 <div align="center">
 
-# 🎫 EventHub
+# EventHub
 
 **A live event ticketing platform where the same seat can never be sold to two people.**
 
@@ -10,10 +10,10 @@
 ![Redis](https://img.shields.io/badge/Redis-7-DC382D?logo=redis&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-70_automated-2E7D32)
+![Tests](https://img.shields.io/badge/tests-70_passing-2E7D32)
 ![Cost](https://img.shields.io/badge/hosting-%E2%82%B90%2Fmonth-555)
 
-### [🚀 Live demo: eventhub-swart-xi.vercel.app](https://eventhub-swart-xi.vercel.app)
+### [Live demo: eventhub-swart-xi.vercel.app](https://eventhub-swart-xi.vercel.app)
 
 Sign in with Google · Pick a seat · Pay (demo) · Get a QR ticket · Scan it at the door
 
@@ -21,45 +21,45 @@ Sign in with Google · Pick a seat · Pay (demo) · Get a QR ticket · Scan it a
 
 ---
 
-## ✨ At a glance
+## At a glance
 
 | | |
 |---|---|
-| 🎯 **The problem** | 1,000 people click the same seat at the same second. Exactly **one** must get it, and nobody may be charged twice. |
-| 🧠 **The idea** | Let **PostgreSQL** decide, in one atomic statement, with row locks taken in a fixed order and `CHECK` constraints as the last line of defence. |
-| ⚡ **Real-time** | Every open seat map updates within a second through **Server-Sent Events + Redis Pub/Sub**. |
-| 🧪 **The proof** | **70 automated tests** on every push. 1,000-way seat race → exactly 1 winner. 2,500 payment requests at once → each booking paid exactly once. 0 deadlocks. |
-| 📈 **Load** | **~350 bookings/s** with **0% errors** (k6, laptop). Live free site: 50 users at once, p95 117 ms. |
-| 💸 **Cost** | **₹0/month** on Vercel, Render, Neon and Upstash free plans. |
+| **The problem** | 1,000 people click the same seat at the same second. Exactly **one** must get it, and nobody may be charged twice. |
+| **The idea** | Let **PostgreSQL** decide, in one atomic statement, with row locks taken in a fixed order and `CHECK` constraints as the last line of defence. |
+| **Real-time** | Every open seat map updates within a second through **Server-Sent Events + Redis Pub/Sub**. |
+| **The proof** | **70 automated tests** on every push. 1,000-way seat race → exactly 1 winner. 2,500 payment requests at once → each booking paid exactly once. 0 deadlocks. |
+| **Load** | **~350 bookings/s** with **0% errors** (k6, laptop). Live free site: 50 users at once, p95 117 ms. |
+| **Cost** | **₹0/month** on Vercel, Render, Neon and Upstash free plans. |
 
 ---
 
-## 📚 Contents
+## Contents
 
-1. [The story behind it](#-the-story-behind-it)
-2. [Try it in 2 minutes](#-try-it-in-2-minutes)
-3. [Features](#-features)
-4. [What is real and what is simulated](#-what-is-real-and-what-is-simulated)
-5. [Architecture](#-architecture)
-6. [A booking, end to end](#-a-booking-end-to-end)
-7. [How double booking is prevented](#-how-double-booking-is-prevented)
-8. [QR tickets and door check-in](#-qr-tickets-and-door-check-in)
-9. [Data model](#-data-model)
-10. [API reference](#-api-reference)
-11. [Tech stack](#-tech-stack)
-12. [Testing](#-testing)
-13. [Load testing](#-load-testing)
-14. [Run it locally](#-run-it-locally)
-15. [Configuration](#-configuration)
-16. [Deployment (₹0/month)](#-deployment-0month)
-17. [How far the free plan goes](#-how-far-the-free-plan-goes)
-18. [Project structure](#-project-structure)
-19. [Roadmap](#-roadmap)
-20. [TL;DR](#-tldr)
+1. [The story behind it](#the-story-behind-it)
+2. [Try it in 2 minutes](#try-it-in-2-minutes)
+3. [Features](#features)
+4. [What is real and what is simulated](#what-is-real-and-what-is-simulated)
+5. [Architecture](#architecture)
+6. [A booking, end to end](#a-booking-end-to-end)
+7. [How double booking is prevented](#how-double-booking-is-prevented)
+8. [QR tickets and door check-in](#qr-tickets-and-door-check-in)
+9. [Data model](#data-model)
+10. [API reference](#api-reference)
+11. [Tech stack](#tech-stack)
+12. [Testing](#testing)
+13. [Load testing](#load-testing)
+14. [Run it locally](#run-it-locally)
+15. [Configuration](#configuration)
+16. [Deployment (₹0/month)](#deployment-0month)
+17. [How far the free plan goes](#how-far-the-free-plan-goes)
+18. [Project structure](#project-structure)
+19. [Roadmap](#roadmap)
+20. [TL;DR](#tldr)
 
 ---
 
-## 📖 The story behind it
+## The story behind it
 
 You know how booking a movie or a stand-up show works: open the seat map, pick a seat,
 pay. Now picture a popular show going on sale at **8 pm sharp**. Hundreds of people open
@@ -78,12 +78,12 @@ QR tickets, and hosts scan them at the door.
 
 ---
 
-## 🎮 Try it in 2 minutes
+## Try it in 2 minutes
 
 1. Open **https://eventhub-swart-xi.vercel.app** and sign in with Google.
    *The first visit may take a few seconds while the free server wakes up.*
 2. Open any event and pick seats on the seat map (or choose a number of tickets for open seating).
-   > 💡 Open the **same event in two browser windows**. Pick a seat in one and watch it turn grey in the other, live.
+   > **Tip:** Open the **same event in two browser windows**. Pick a seat in one and watch it turn grey in the other, live.
 3. Click **Continue**. Your seats are now **held for 5 minutes**, with a countdown.
 4. Click **Pay**. It's a demo payment, so **no real money moves**.
 5. Your ticket appears with a **QR code**. Click **Download ticket** to save it as an image.
@@ -92,21 +92,21 @@ QR tickets, and hosts scan them at the door.
 
 ---
 
-## 🧩 Features
+## Features
 
 Everyone signs in the same way (Google). Becoming a host is one click, and admins are a
 list of email addresses in the server settings.
 
 <table>
 <tr><th width="18%">Who</th><th>What they can do</th></tr>
-<tr><td>🌍 <b>Anyone</b></td><td>Browse and search events by city and type (film, comedy, music, theatre, workshop) and see live availability.</td></tr>
-<tr><td>🎫 <b>Attendee</b></td><td>
+<tr><td><b>Anyone</b></td><td>Browse and search events by city and type (film, comedy, music, theatre, workshop) and see live availability.</td></tr>
+<tr><td><b>Attendee</b></td><td>
 Pick exact seats on a live map, or a number of tickets for open seating ·
 5-minute seat hold with countdown · Pay (demo) and get a QR ticket ·
 download the ticket as an image · get directions to the venue ·
 cancel for a full refund before the host's cutoff time.
 </td></tr>
-<tr><td>🎤 <b>Host</b></td><td>
+<tr><td><b>Host</b></td><td>
 Create an event in 5 steps (details → Google Maps link → seating → tickets → review) ·
 a cover picture is chosen automatically from the event type ·
 paid tickets, <b>free entry</b>, or a <b>discount %</b> ·
@@ -116,36 +116,36 @@ live sales chart · attendee list with CSV export ·
 QR door check-in with undo and a live arrival counter ·
 delete drafts · cancel an event (everyone is refunded automatically).
 </td></tr>
-<tr><td>👮 <b>Admin</b></td><td>Platform totals (users, hosts, events, bookings, revenue), every event with its host, and cancel any event with refunds.</td></tr>
+<tr><td><b>Admin</b></td><td>Platform totals (users, hosts, events, bookings, revenue), every event with its host, and cancel any event with refunds.</td></tr>
 </table>
 
 Every screen and flow is walked through in **[docs/WORKFLOW.md](docs/WORKFLOW.md)**.
 
 ---
 
-## 🔍 What is real and what is simulated
+## What is real and what is simulated
 
 I prefer to be upfront about this.
 
 | Part | Status | Notes |
 |---|---|---|
-| Google sign-in | ✅ Real | The Google ID token is verified on the server |
-| Holds, booking, cancelling, refunds | ✅ Real | Correct under heavy concurrency (see [Testing](#-testing)) |
-| Live seat map | ✅ Real | Every open browser updates within about a second |
-| QR tickets and door check-in | ✅ Real | Each ticket checks in exactly once |
-| Host dashboard, CSV export, admin page | ✅ Real | |
-| **Payments** | 🟡 **Simulated** | **No real money moves.** Checkout has a demo **Pay** button and a **Simulate failed payment** button. A real gateway such as Razorpay needs a registered business and KYC. Everything *around* payment is built the real way: seats are held before paying, a payment can never be charged twice, and refunds are recorded. Adding Razorpay is a small, well-defined change ([plan](docs/WORKFLOW.md#6-payments-simulated-on-purpose)) |
-| **Emails** | 🟡 **Off** | The email code (ticket with QR, host alert, cancellation notice) is written and tested, but switched off. One setting turns it on |
-| Poster upload | ⚪ Hidden | Implemented in the backend; the button is hidden and events use type-based cover pictures |
-| Monitoring | ⚪ Basic | Uptime checks every 5 minutes plus server logs. No dashboards or error tracking yet |
+| Google sign-in | Real | The Google ID token is verified on the server |
+| Holds, booking, cancelling, refunds | Real | Correct under heavy concurrency (see [Testing](#testing)) |
+| Live seat map | Real | Every open browser updates within about a second |
+| QR tickets and door check-in | Real | Each ticket checks in exactly once |
+| Host dashboard, CSV export, admin page | Real | |
+| **Payments** | **Simulated** | **No real money moves.** Checkout has a demo **Pay** button and a **Simulate failed payment** button. A real gateway such as Razorpay needs a registered business and KYC. Everything *around* payment is built the real way: seats are held before paying, a payment can never be charged twice, and refunds are recorded. Adding Razorpay is a small, well-defined change ([plan](docs/WORKFLOW.md#6-payments-simulated-on-purpose)) |
+| **Emails** | **Off** | The email code (ticket with QR, host alert, cancellation notice) is written and tested, but switched off. One setting turns it on |
+| Poster upload | Hidden | Implemented in the backend; the button is hidden and events use type-based cover pictures |
+| Monitoring | Basic | Uptime checks every 5 minutes plus server logs. No dashboards or error tracking yet |
 
 ---
 
-## 🧱 Architecture
+## Architecture
 
 ```mermaid
 flowchart LR
-    U["🧑 Browser<br/>React app"]
+    U[" Browser<br/>React app"]
     subgraph Vercel["Vercel (free)"]
       FE["Static site<br/>+ rewrites /api/*"]
     end
@@ -178,7 +178,7 @@ flowchart LR
 
 ---
 
-## 🔄 A booking, end to end
+## A booking, end to end
 
 ```mermaid
 sequenceDiagram
@@ -220,7 +220,7 @@ or cancellation. `BLOCKED` seats (pillars, aisles) are never sellable.
 
 ---
 
-## 🔒 How double booking is prevented
+## How double booking is prevented
 
 This is the heart of the project.
 
@@ -274,7 +274,7 @@ CHECK (capacity IS NULL OR sold + held <= capacity)
 
 ---
 
-## 📱 QR tickets and door check-in
+## QR tickets and door check-in
 
 **What's in the QR?** Only a link: `https://<site>/check-in/EH-7KQ2M9XA`. The code is 8
 random characters from a cryptographic generator, about **2.8 trillion** possibilities, so
@@ -288,7 +288,7 @@ checked on the server.
 3. Is the booking still **confirmed** (not cancelled or refunded)?
 4. Is the event **not over yet**? Check-in closes 6 hours after the end time, or 12 hours after the start if there is no end time.
 5. Mark it used **exactly once**, then show a big, clear result:
-   🟢 **Welcome in!** (name, tickets, seats) · 🟡 **Already checked in at 7:02 pm** · 🔴 **Not your event / Cancelled / Event is over**
+   **Welcome in!** (green) (name, tickets, seats) · **Already checked in at 7:02 pm** (yellow) · **Not your event / Cancelled / Event is over** (red)
 
 | Real-world problem at the door | What happens |
 |---|---|
@@ -304,7 +304,7 @@ arrival-time column.
 
 ---
 
-## 💾 Data model
+## Data model
 
 ```mermaid
 erDiagram
@@ -358,7 +358,7 @@ erDiagram
 
 ---
 
-## 🌐 API reference
+## API reference
 
 All routes live under `/api`. Errors always have the same shape:
 `{"error": {"code": "SEATS_TAKEN", "message": "Some of those seats were just taken…"}}`.
@@ -409,7 +409,7 @@ All routes live under `/api`. Errors always have the same shape:
 
 ---
 
-## 🧰 Tech stack
+## Tech stack
 
 | Layer | Choice | Why |
 |---|---|---|
@@ -432,10 +432,15 @@ All routes live under `/api`. Errors always have the same shape:
 
 ---
 
-## 🧪 Testing
+## Testing
 
 There are **70 automated tests**, and GitHub Actions runs every one of them on every push
 and pull request.
+
+**What "70 tests" means:** 70 test *cases* (39 in Go, 31 in the frontend), each checking one
+behaviour end to end. Together they contain **238 checks**, and a single concurrency test can
+fire **1,000 or 2,500 simultaneous requests**. So the count is small on purpose: each test is
+a full scenario, not a one-line assertion.
 
 | Kind | Count | How it runs | What it proves |
 |---|---|---|---|
@@ -460,7 +465,7 @@ separate `eventhub_test` database, created and migrated automatically.
 
 ---
 
-## 📈 Load testing
+## Load testing
 
 [k6](https://k6.io) scripts in [`loadtest/`](loadtest/) send real HTTP traffic to a running
 API.
@@ -476,7 +481,7 @@ Full numbers and method: **[loadtest/RESULTS.md](loadtest/RESULTS.md)**.
 
 ---
 
-## 💻 Run it locally
+## Run it locally
 
 **Prerequisites (macOS):**
 
@@ -514,7 +519,7 @@ locally, never in production. Sign in as `admin@eventhub.dev` to see the admin p
 
 ---
 
-## 🔧 Configuration
+## Configuration
 
 | Variable | Local | Production | Notes |
 |---|---|---|---|
@@ -535,7 +540,7 @@ Secrets live only in the Render and Vercel dashboards and in git-ignored local f
 
 ---
 
-## 📦 Deployment (₹0/month)
+## Deployment (₹0/month)
 
 | Job | Service (free plan) | Main limits |
 |---|---|---|
@@ -555,7 +560,7 @@ Step-by-step guide: **[docs/DEPLOY.md](docs/DEPLOY.md)**.
 
 ---
 
-## 📊 How far the free plan goes
+## How far the free plan goes
 
 Honest estimates, based on measurements plus the free-plan limits:
 
@@ -573,7 +578,7 @@ waiting room. **No changes to the core code are needed.**
 
 ---
 
-## 📁 Project structure
+## Project structure
 
 ```
 eventhub/
@@ -608,7 +613,7 @@ eventhub/
 
 ---
 
-## 🧭 Roadmap
+## Roadmap
 
 | Next step | Why | Tool |
 |---|---|---|
@@ -623,7 +628,7 @@ eventhub/
 
 ---
 
-## 🧾 TL;DR
+## TL;DR
 
 - **What:** a full ticketing platform with live seat maps, 5-minute holds, QR tickets, door check-in, host dashboards and an admin page.
 - **Hard part:** many people clicking the same seat at once, and still **never selling it twice**. PostgreSQL decides in one atomic statement, with ordered locks and `CHECK` constraints behind it.
@@ -633,6 +638,6 @@ eventhub/
 
 <div align="center">
 
-**Tip:** open the same event in two windows and watch the seats change in real time. ✨
+**Tip:** open the same event in two windows and watch the seats change in real time. 
 
 </div>
